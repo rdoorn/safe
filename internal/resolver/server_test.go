@@ -89,6 +89,39 @@ func TestServerForwardsAllowed(t *testing.T) {
 	require.Equal(t, 300*time.Second, updater.added["1.2.3.4"])
 }
 
+func TestServerDeniesUnknownName(t *testing.T) {
+	updater := newStubSetUpdater()
+	upstreamCalls := 0
+	upstream := &stubUpstream{answers: map[string][]net.IP{}}
+	srv := &resolver.Server{
+		Matcher:  resolver.NewMatcher([]string{"api.anthropic.com"}),
+		Upstream: countingUpstream{u: upstream, calls: &upstreamCalls},
+		Updater:  updater,
+		MinTTL:   30 * time.Second,
+		MaxTTL:   time.Hour,
+	}
+	addr := startTestServer(t, srv)
+
+	c := new(dns.Client)
+	m := new(dns.Msg)
+	m.SetQuestion("evil.example.com.", dns.TypeA)
+	resp, _, err := c.Exchange(m, addr)
+	require.NoError(t, err)
+	require.Equal(t, dns.RcodeNameError, resp.Rcode, "deny returns NXDOMAIN")
+	require.Equal(t, 0, upstreamCalls, "denied name must not be forwarded upstream")
+	require.Empty(t, updater.added, "no allow rule installed for denied name")
+}
+
+type countingUpstream struct {
+	u     resolver.Upstream
+	calls *int
+}
+
+func (c countingUpstream) Exchange(ctx context.Context, m *dns.Msg) (*dns.Msg, error) {
+	*c.calls++
+	return c.u.Exchange(ctx, m)
+}
+
 func TestServerClampsTTL(t *testing.T) {
 	updater := newStubSetUpdater()
 	srv := &resolver.Server{
