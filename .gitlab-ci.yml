@@ -1,0 +1,67 @@
+# Image digests pinned for supply chain security.
+# golang:1.25.5 (matches local toolchain)
+image: golang:1.25.5
+
+stages:
+  - lint
+  - test
+  - build
+
+cache:
+  key:
+    files:
+      - go.sum
+  paths:
+    - /go/pkg/mod
+
+variables:
+  CGO_ENABLED: "0"
+  VERSION: ${CI_COMMIT_TAG:-dev}
+  LDFLAGS: "-X github.com/rdoorn/safe/pkg/version.Version=${VERSION}"
+
+# --- Lint ---
+
+fmt:
+  stage: lint
+  script:
+    - test -z "$(gofmt -l .)"
+
+vet:
+  stage: lint
+  script:
+    - go vet ./...
+
+golangci-lint:
+  stage: lint
+  image: golangci/golangci-lint:v2.7.2
+  script:
+    - golangci-lint run ./...
+
+# --- Test ---
+
+test:
+  stage: test
+  variables:
+    CGO_ENABLED: "1"
+  script:
+    - go test -short -race ./...
+
+# --- Build ---
+
+build:
+  stage: build
+  parallel:
+    matrix:
+      - GOOS: linux
+        GOARCH: [amd64, arm64]
+      - GOOS: darwin
+        GOARCH: [amd64, arm64]
+  script:
+    - mkdir -p dist
+    - for b in safe safe-init safe-fw safe-dns safe-keyholder; do
+        go build -ldflags "${LDFLAGS}" -o dist/$${b}-${GOOS}-${GOARCH} ./cmd/$${b};
+      done
+  artifacts:
+    paths:
+      - dist/
+    expire_in: 1 week
