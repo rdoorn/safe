@@ -9,7 +9,6 @@ import (
 
 // claudeMount describes one opt-in subpath of the user's ~/.claude/ tree.
 type claudeMount struct {
-	flag    string // which Customization bool gates this mount
 	srcRel  string // path under ~/.claude on the host
 	dstAbs  string // absolute path inside the container
 	wantDir bool   // true if the source must be a directory; false for a file
