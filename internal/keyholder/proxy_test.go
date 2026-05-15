@@ -44,7 +44,7 @@ func TestProxyForwardsAndRewrites(t *testing.T) {
 
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	require.Equal(t, "Bearer sk-real", sawAuth)
