@@ -1,0 +1,9 @@
+.git/
+.gitignore
+.gitlab-ci.yml
+.golangci.yml
+bin/
+dist/
+docs/
+*.md
+.DS_Store
