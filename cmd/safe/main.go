@@ -16,7 +16,10 @@ func main() {
 }
 
 func newRootCmd() *cobra.Command {
-	var doPrintConfig bool
+	var (
+		doPrintConfig bool
+		doDoctor      bool
+	)
 
 	cmd := &cobra.Command{
 		Use:           "safe",
@@ -25,25 +28,27 @@ func newRootCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: false,
 		Version:       version.Version,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			if doPrintConfig {
-				xdg, err := os.UserConfigDir()
-				if err != nil {
-					return fmt.Errorf("locate user config dir: %w", err)
-				}
-				cwd, err := os.Getwd()
-				if err != nil {
-					return fmt.Errorf("locate cwd: %w", err)
-				}
-				return printConfig(cmd.OutOrStdout(), xdg, cwd)
+		RunE: func(cmd *cobra.Command, args []string) error {
+			xdg, cwd, err := hostDirs()
+			if err != nil {
+				return err
 			}
-			return cmd.Help()
+
+			switch {
+			case doPrintConfig:
+				return printConfig(cmd.OutOrStdout(), xdg, cwd)
+			case doDoctor:
+				return runDoctor(cmd.Context(), cmd.OutOrStdout(), xdg, cwd, resolveAgentName(args))
+			default:
+				return cmd.Help()
+			}
 		},
 	}
 	cmd.SetVersionTemplate(fmt.Sprintf("safe %s\n", version.Version))
 
 	cmd.PersistentFlags().String("config", "", "path to safe.yaml (default: XDG + cwd)")
 	cmd.Flags().BoolVar(&doPrintConfig, "print-config", false, "print the merged config as YAML and exit")
+	cmd.Flags().BoolVar(&doDoctor, "doctor", false, "run pre-flight checks and exit")
 
 	return cmd
 }
