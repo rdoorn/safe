@@ -88,7 +88,6 @@ cd ~/code/my-project
 # Drop a default safe.yaml in the project root
 safe init
 # wrote /Users/you/code/my-project/safe.yaml
-# Next: edit the allowlist for project-specific endpoints, then run `safe --doctor`.
 
 # Edit allowlist to add anything this project needs to reach
 $EDITOR safe.yaml
@@ -96,14 +95,42 @@ $EDITOR safe.yaml
 # Sanity check
 safe --doctor
 
-# Set your API key once (the agent never sees it; safe pipes it to keyholder)
-export ANTHROPIC_API_KEY=sk-...
-
 # Go
 claude       # or `safe claude` if you didn't set up the alias
 ```
 
 `safe init` will refuse to overwrite an existing `safe.yaml` — use `safe init --force` if you really mean it.
+
+### Authentication
+
+SAFE supports two mutually-exclusive auth modes. `safe init` scaffolds **OAuth** by default (the Claude.ai / Claude Enterprise flow). Switch by editing the agent block in `safe.yaml`:
+
+**OAuth (default — Claude.ai, Claude Enterprise):**
+```yaml
+agents:
+  claude:
+    auth_credentials_file: ~/.claude/.credentials.json
+    auth_refresh_url: https://console.anthropic.com/v1/oauth/token
+```
+Run ` + "`claude login`" + ` on your host **once** (outside SAFE — it opens a browser). That writes `~/.claude/.credentials.json` on the host. SAFE reads those credentials, pipes them into the keyholder, and refreshes the access token via `console.anthropic.com` when it expires. The agent never sees the tokens; the host `.credentials.json` file is never mounted into the container.
+
+> Make sure `console.anthropic.com` is on your `allowlist` — `safe init` adds it by default.
+
+**API key (Anthropic Console accounts):**
+```yaml
+agents:
+  claude:
+    auth_env: ANTHROPIC_API_KEY
+    auth_header: Authorization
+    auth_scheme: Bearer
+```
+And on the host:
+```bash
+export ANTHROPIC_API_KEY=sk-...
+```
+The key is piped to keyholder once at container start and never enters the agent's environment.
+
+`safe --doctor` checks that whichever mode you chose is properly configured.
 
 ## Global vs per-project config
 
