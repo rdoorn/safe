@@ -11,7 +11,7 @@ import (
 func TestBuildRulesetTableAndChain(t *testing.T) {
 	rs := firewall.Build(firewall.Inputs{
 		UpstreamDNS: []net.IP{net.ParseIP("1.1.1.1")},
-		FirewallUID: 100,
+		FirewallUID: 200,
 	})
 
 	require.Equal(t, "safe", rs.Table.Name)
@@ -23,7 +23,7 @@ func TestBuildRulesetTableAndChain(t *testing.T) {
 func TestBuildRulesetSets(t *testing.T) {
 	rs := firewall.Build(firewall.Inputs{
 		UpstreamDNS: []net.IP{net.ParseIP("1.1.1.1"), net.ParseIP("1.0.0.1")},
-		FirewallUID: 100,
+		FirewallUID: 200,
 	})
 
 	require.Contains(t, rs.Sets, "allowed_v4")
@@ -41,7 +41,7 @@ func TestBuildRulesetSets(t *testing.T) {
 func TestBuildRulesetOutputRulesInOrder(t *testing.T) {
 	rs := firewall.Build(firewall.Inputs{
 		UpstreamDNS: []net.IP{net.ParseIP("1.1.1.1")},
-		FirewallUID: 100,
+		FirewallUID: 200,
 	})
 
 	require.GreaterOrEqual(t, len(rs.Rules), 6)
@@ -49,7 +49,7 @@ func TestBuildRulesetOutputRulesInOrder(t *testing.T) {
 	require.Equal(t, firewall.RuleAcceptLoopback, rs.Rules[1].Kind)
 	require.Equal(t, firewall.RuleAcceptLocalhostDNS, rs.Rules[2].Kind)
 	require.Equal(t, firewall.RuleAcceptUpstreamDNS, rs.Rules[3].Kind)
-	require.Equal(t, uint32(100), rs.Rules[3].SourceUID, "upstream DNS rule is scoped to firewall uid")
+	require.Equal(t, uint32(200), rs.Rules[3].SourceUID, "upstream DNS rule is scoped to firewall uid")
 	require.Equal(t, firewall.RuleAcceptAllowedV4, rs.Rules[4].Kind)
 	require.Equal(t, firewall.RuleAcceptAllowedV6, rs.Rules[5].Kind)
 }
@@ -57,7 +57,7 @@ func TestBuildRulesetOutputRulesInOrder(t *testing.T) {
 func TestBuildRulesetUpstreamDNSElementsAreIPv4(t *testing.T) {
 	rs := firewall.Build(firewall.Inputs{
 		UpstreamDNS: []net.IP{net.ParseIP("1.1.1.1"), net.ParseIP("2001:4860:4860::8888")},
-		FirewallUID: 100,
+		FirewallUID: 200,
 	})
 
 	for _, e := range rs.Sets["upstream_dns"].Elements {
@@ -66,6 +66,6 @@ func TestBuildRulesetUpstreamDNSElementsAreIPv4(t *testing.T) {
 }
 
 func TestBuildRulesetEmptyUpstreamDNS(t *testing.T) {
-	rs := firewall.Build(firewall.Inputs{UpstreamDNS: nil, FirewallUID: 100})
+	rs := firewall.Build(firewall.Inputs{UpstreamDNS: nil, FirewallUID: 200})
 	require.Empty(t, rs.Sets["upstream_dns"].Elements)
 }

@@ -32,9 +32,9 @@ import (
 )
 
 const (
-	defaultFirewallUID  = 100
-	defaultFirewallGID  = 100
-	defaultKeyholderUID = 101
+	defaultFirewallUID  = 200
+	defaultFirewallGID  = 200
+	defaultKeyholderUID = 201
 	defaultAgentUID     = 1000
 	defaultAgentGID     = 1000
 	keyholderSocket     = "/run/safe/keyholder.sock"

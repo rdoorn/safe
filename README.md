@@ -12,7 +12,7 @@ Early implementation. The host CLI and the four in-container binaries are writte
 
 - **Default-deny outbound network.** The container's nftables `OUTPUT` chain drops everything that isn't explicitly allowed.
 - **FQDN allowlist via DNS.** An in-container DNS resolver (safe-dns) only resolves names on the allowlist. When it does, it dynamically punches an nftables rule open for the resolved IP, with a clamped TTL. Raw IP connections never work — there's no rule for an address that didn't come through the resolver.
-- **API key isolated from the agent.** Your `ANTHROPIC_API_KEY` is piped to a `keyholder` proxy process (uid 101), not to the agent (uid 1000). The keyholder injects the `Authorization` header on outbound calls. The agent can never read, echo, or exfiltrate the key.
+- **API key isolated from the agent.** Your `ANTHROPIC_API_KEY` is piped to a `keyholder` proxy process (uid 201), not to the agent (uid 1000). The keyholder injects the `Authorization` header on outbound calls. The agent can never read, echo, or exfiltrate the key.
 - **Curated tools, locked down.** The image ships with git, gh, ripgrep, fd, jq, Go, Python, and Node — no apt at runtime. Agent tool list is restricted via Claude Code env vars.
 - **Read-only rootfs, no caps, seccomp profile.** `--cap-drop ALL --cap-add NET_ADMIN`, `--read-only`, `--security-opt no-new-privileges`, custom seccomp blocking `ptrace`, `bpf`, `mount`, `process_vm_readv`, and friends.
 - **No host secrets bind-mounted.** No `~/.ssh`, no `~/.aws`, no SSH agent forwarding, no docker socket. The host environment is **not** passed through — explicit allowlist only.

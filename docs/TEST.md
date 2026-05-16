@@ -82,7 +82,7 @@ After scenario 2 or 4:
 
 - **Allowed host returns NXDOMAIN:** check `safe --print-config` — your project `safe.yaml` may have shadowed the global allowlist. Append rather than replace.
 - **Allowed host times out:** likely the allow rule expired (TTL clamp). Repeat the request; safe-dns refreshes the rule on every successful resolution.
-- **Permission denied opening the audit log:** check the host volume mode; safe-dns runs as uid 100 inside the container.
+- **Permission denied opening the audit log:** check the host volume mode; safe-dns runs as uid 200 inside the container.
 - **Image keeps getting rebuilt:** `docker buildx` re-runs every layer if anything earlier changed; consider `--cache-from` for iteration.
 
 If a scenario fails in a way the design says it shouldn't, file an issue with the exact prompt, the agent's reply, and `safe --print-config` output. See [SECURITY.md](SECURITY.md) for the contract.

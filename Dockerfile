@@ -69,14 +69,14 @@ COPY --from=builder /src/bin/safe-dns    /usr/sbin/safe-dns
 COPY --from=builder /src/bin/safe-keyholder /usr/sbin/safe-keyholder
 
 # --- Users + groups ---
-# firewall (100): safe-dns
-# keyholder (101): safe-keyholder
+# firewall (200): safe-dns       (gid 100 is taken by Debian's "users" group)
+# keyholder (201): safe-keyholder
 # agent (1000): the AI agent and any tools it spawns
 RUN set -eux; \
-    groupadd --system --gid 100 firewall; \
-    useradd  --system --uid 100 --gid 100 --no-create-home firewall; \
-    groupadd --system --gid 101 keyholder; \
-    useradd  --system --uid 101 --gid 101 --no-create-home keyholder; \
+    groupadd --system --gid 200 firewall; \
+    useradd  --system --uid 200 --gid 200 --no-create-home firewall; \
+    groupadd --system --gid 201 keyholder; \
+    useradd  --system --uid 201 --gid 201 --no-create-home keyholder; \
     groupadd --gid 1000 agent; \
     useradd  --uid 1000 --gid 1000 --home-dir /home/agent --create-home --shell /bin/bash agent
 

@@ -12,7 +12,7 @@ import (
 func TestRenderHasTableAndChainPolicy(t *testing.T) {
 	rs := firewall.Build(firewall.Inputs{
 		UpstreamDNS: []net.IP{net.ParseIP("1.1.1.1")},
-		FirewallUID: 100,
+		FirewallUID: 200,
 	})
 	out := firewall.Render(rs)
 	require.Contains(t, out, "table inet safe {")
@@ -23,7 +23,7 @@ func TestRenderHasTableAndChainPolicy(t *testing.T) {
 func TestRenderHasDynamicSetsWithTimeout(t *testing.T) {
 	out := firewall.Render(firewall.Build(firewall.Inputs{
 		UpstreamDNS: []net.IP{net.ParseIP("1.1.1.1")},
-		FirewallUID: 100,
+		FirewallUID: 200,
 	}))
 	require.Contains(t, out, "set allowed_v4 {")
 	require.Contains(t, out, "type ipv4_addr")
@@ -36,7 +36,7 @@ func TestRenderHasDynamicSetsWithTimeout(t *testing.T) {
 func TestRenderHasUpstreamDNSSetWithElements(t *testing.T) {
 	out := firewall.Render(firewall.Build(firewall.Inputs{
 		UpstreamDNS: []net.IP{net.ParseIP("1.1.1.1"), net.ParseIP("1.0.0.1")},
-		FirewallUID: 100,
+		FirewallUID: 200,
 	}))
 	require.Contains(t, out, "set upstream_dns {")
 	require.Contains(t, out, "elements = { 1.1.1.1, 1.0.0.1 }")
@@ -45,7 +45,7 @@ func TestRenderHasUpstreamDNSSetWithElements(t *testing.T) {
 func TestRenderRulesInOrder(t *testing.T) {
 	out := firewall.Render(firewall.Build(firewall.Inputs{
 		UpstreamDNS: []net.IP{net.ParseIP("1.1.1.1")},
-		FirewallUID: 100,
+		FirewallUID: 200,
 	}))
 	// Order matters: nftables is first-match-wins inside a chain when an
 	// accept verdict short-circuits. We rely on the established/related
@@ -53,7 +53,7 @@ func TestRenderRulesInOrder(t *testing.T) {
 	idxEst := strings.Index(out, "ct state established,related accept")
 	idxLo := strings.Index(out, "oif \"lo\" accept")
 	idxLocalDNS := strings.Index(out, "udp dport 53 ip daddr 127.0.0.1 accept")
-	idxUpstreamDNS := strings.Index(out, "meta skuid 100 udp dport 53 ip daddr @upstream_dns accept")
+	idxUpstreamDNS := strings.Index(out, "meta skuid 200 udp dport 53 ip daddr @upstream_dns accept")
 	idxAllowedV4 := strings.Index(out, "ip daddr @allowed_v4 accept")
 	idxAllowedV6 := strings.Index(out, "ip6 daddr @allowed_v6 accept")
 
@@ -70,7 +70,7 @@ func TestRenderRulesInOrder(t *testing.T) {
 func TestRenderIsDeterministic(t *testing.T) {
 	rs := firewall.Build(firewall.Inputs{
 		UpstreamDNS: []net.IP{net.ParseIP("1.1.1.1"), net.ParseIP("1.0.0.1")},
-		FirewallUID: 100,
+		FirewallUID: 200,
 	})
 	a := firewall.Render(rs)
 	b := firewall.Render(rs)

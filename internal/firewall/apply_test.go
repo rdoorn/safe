@@ -31,7 +31,7 @@ func (f *fakeRunner) Run(_ context.Context, cmd string, args []string, stdin str
 func TestApplyShellsOutToNFT(t *testing.T) {
 	rs := firewall.Build(firewall.Inputs{
 		UpstreamDNS: []net.IP{net.ParseIP("1.1.1.1")},
-		FirewallUID: 100,
+		FirewallUID: 200,
 	})
 
 	r := &fakeRunner{}
@@ -57,7 +57,7 @@ func TestApplyDefaultNFTPath(t *testing.T) {
 func TestApplyPropagatesErrors(t *testing.T) {
 	rs := firewall.Build(firewall.Inputs{
 		UpstreamDNS: []net.IP{net.ParseIP("1.1.1.1")},
-		FirewallUID: 100,
+		FirewallUID: 200,
 	})
 
 	r := &fakeRunner{err: context.Canceled, stderr: "Operation not permitted"}

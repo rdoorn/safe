@@ -22,7 +22,7 @@ import (
 
 const (
 	defaultConfigPath  = "/etc/safe/config.yaml"
-	defaultFirewallUID = 100
+	defaultFirewallUID = 200
 	applyTimeout       = 10 * time.Second
 )
 

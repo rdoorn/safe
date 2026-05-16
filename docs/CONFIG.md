@@ -65,7 +65,7 @@ audit:
 |---|---|---|---|---|
 | `agents` | map[string]Agent | yes | — | Agent registry; key is the name passed on the CLI (`safe <name>`). |
 | `allowlist` | []string | yes | — | FQDNs (or `*.fqdn` wildcards) the in-container DNS resolver will answer. Anything not listed gets NXDOMAIN. Validated against an RFC-ish FQDN regex; IPs are rejected. |
-| `upstream_dns` | []string | yes | — | Upstream resolver IPs (v4) for safe-dns. Only reachable by uid 100 (firewall) per the nftables ruleset. |
+| `upstream_dns` | []string | yes | — | Upstream resolver IPs (v4) for safe-dns. Only reachable by uid 200 (firewall) per the nftables ruleset. |
 | `mounts` | []string | no | `[]` | Reserved for future opt-in extra mounts. |
 | `env_passthrough` | []string | no | `[TERM, LANG, TZ]` | Host env vars allowed into the container. Everything else (`HOME`, `PATH`, …) is blocked. |
 | `resources.memory` | string | no | `4g` | Docker `--memory` value. |
