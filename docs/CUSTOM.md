@@ -1,6 +1,6 @@
 # Building a Custom SAFE Runtime Image
 
-The published `safe-runtime` image ships a curated tool set (git, gh, ripgrep, fd, jq, Go, Python, Node, Claude Code). To add more tools — Terraform, a database client, an SDK — build your own image *on top of* the official one and point `safe.yaml` at it.
+The published `safe-runtime` image ships a curated tool set (git, ripgrep, fd, jq, Go, Python, Node, Claude Code). To add more tools — `gh`, Terraform, a database client, an SDK — build your own image *on top of* the official one and point `safe.yaml` at it.
 
 ## Example
 
