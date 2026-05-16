@@ -88,9 +88,9 @@ RUN set -eux; \
 # firewall user (and root, i.e. safe-init) can execute it. This is the
 # narrow replacement for --security-opt no-new-privileges, which the
 # container does not set because it would disable file capabilities.
-RUN setcap cap_net_admin+ep /usr/sbin/safe-dns \
- && chgrp firewall /usr/sbin/safe-dns \
- && chmod 0750 /usr/sbin/safe-dns
+RUN chgrp firewall /usr/sbin/safe-dns \
+ && chmod 0750 /usr/sbin/safe-dns \
+ && setcap cap_net_admin+ep /usr/sbin/safe-dns
 
 # --- Directories ---
 RUN mkdir -p /etc/safe /var/log/safe /run/safe /workspace \
