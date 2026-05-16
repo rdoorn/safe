@@ -20,6 +20,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -28,6 +29,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/rdoorn/safe/internal/config"
 	"github.com/rdoorn/safe/internal/initd"
 )
 
@@ -80,13 +82,19 @@ func run(agentName string, agentArgs []string) error {
 		return fmt.Errorf("start safe-dns: %w", err)
 	}
 
-	apiKey, err := readKeyFromSocket(keyholderSocket, keyPipeTimeout)
+	authMode, err := resolveAuthMode(agentName)
 	if err != nil {
-		return fmt.Errorf("read api key: %w", err)
+		return fmt.Errorf("determine auth mode: %w", err)
 	}
 
-	keyholderCmd, err := startUserProcess(safeKeyholder, []string{"--config", configPath, "--agent", agentName},
-		defaultKeyholderUID, defaultKeyholderUID, []byte(apiKey+"\n"))
+	secret, err := readSecretFromSocket(keyholderSocket, keyPipeTimeout)
+	if err != nil {
+		return fmt.Errorf("read auth secret: %w", err)
+	}
+
+	keyholderCmd, err := startUserProcess(safeKeyholder,
+		[]string{"--config", configPath, "--agent", agentName, "--mode", authMode},
+		defaultKeyholderUID, defaultKeyholderUID, secret)
 	if err != nil {
 		return fmt.Errorf("start safe-keyholder: %w", err)
 	}
@@ -140,12 +148,34 @@ func startUserProcess(bin string, args []string, uid, gid uint32, stdin []byte) 
 	return cmd, nil
 }
 
-// readKeyFromSocket waits up to timeout for the host to connect on
-// socketPath and write one line: the API key. The socket is single-shot.
-func readKeyFromSocket(socketPath string, timeout time.Duration) (string, error) {
+// resolveAuthMode reads the SAFE config and decides whether the agent
+// uses a static API key or OAuth credentials.
+func resolveAuthMode(agentName string) (string, error) {
+	cfg, err := config.LoadFile(configPath)
+	if err != nil {
+		return "", err
+	}
+	a, ok := cfg.Agents[agentName]
+	if !ok {
+		return "", fmt.Errorf("agent %q not in config", agentName)
+	}
+	switch {
+	case a.AuthCredentialsFile != "":
+		return "oauth", nil
+	case a.AuthEnv != "":
+		return "apikey", nil
+	default:
+		return "", fmt.Errorf("agent %q has neither auth_env nor auth_credentials_file", agentName)
+	}
+}
+
+// readSecretFromSocket waits up to timeout for the host to connect on
+// socketPath and write the auth secret (API key line or credentials JSON
+// blob). Reads until EOF so multi-line OAuth payloads work too.
+func readSecretFromSocket(socketPath string, timeout time.Duration) ([]byte, error) {
 	ln, err := net.Listen("unix", socketPath)
 	if err != nil {
-		return "", fmt.Errorf("listen %s: %w", socketPath, err)
+		return nil, fmt.Errorf("listen %s: %w", socketPath, err)
 	}
 	defer func() { _ = ln.Close() }()
 	_ = os.Chmod(socketPath, 0o600)
@@ -155,17 +185,17 @@ func readKeyFromSocket(socketPath string, timeout time.Duration) (string, error)
 	}
 	conn, err := ln.Accept()
 	if err != nil {
-		return "", fmt.Errorf("accept on %s: %w", socketPath, err)
+		return nil, fmt.Errorf("accept on %s: %w", socketPath, err)
 	}
 	defer func() { _ = conn.Close() }()
 
 	_ = conn.SetReadDeadline(time.Now().Add(timeout))
-	buf := make([]byte, 4096)
-	n, err := conn.Read(buf)
+	const maxSecretBytes = 1 << 16 // 64 KiB — generous for OAuth JSON
+	data, err := io.ReadAll(io.LimitReader(conn, maxSecretBytes))
 	if err != nil {
-		return "", fmt.Errorf("read key: %w", err)
+		return nil, fmt.Errorf("read secret: %w", err)
 	}
-	return string(buf[:n]), nil
+	return data, nil
 }
 
 // supervise waits for the agent to exit, forwards SIGINT/SIGTERM from

@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -31,7 +32,7 @@ func runAgent(ctx context.Context, stdout, stderr io.Writer, xdgConfigDir, cwd, 
 		return err
 	}
 
-	apiKey, err := resolveAPIKey(agent, shell)
+	secret, err := resolveAuthSecret(agent, shell)
 	if err != nil {
 		return err
 	}
@@ -55,8 +56,8 @@ func runAgent(ctx context.Context, stdout, stderr io.Writer, xdgConfigDir, cwd, 
 		return fmt.Errorf("start docker: %w", err)
 	}
 
-	if !shell && apiKey != "" {
-		go pipeAPIKey(ctx, stderr, filepath.Join(socketDir, keyholderSocketFile), apiKey)
+	if !shell && len(secret) > 0 {
+		go pipeAuthSecret(ctx, stderr, filepath.Join(socketDir, keyholderSocketFile), secret)
 	}
 	go forwardSignalsToDocker(cmd)
 
@@ -79,15 +80,51 @@ func loadAgent(xdgConfigDir, cwd, agentName string) (*config.Config, config.Agen
 	return merged, a, nil
 }
 
-func resolveAPIKey(agent config.Agent, shell bool) (string, error) {
-	if agent.AuthEnv == "" {
-		return "", nil
+// resolveAuthSecret returns the bytes to pipe through the keyholder
+// socket for the agent's chosen auth mode.
+//
+//   - API-key mode: returns "<key>\n" from the host env var.
+//   - OAuth mode: returns the raw JSON contents of the credentials file.
+//
+// In --shell mode auth is optional (no agent is running); missing
+// credentials are tolerated.
+func resolveAuthSecret(agent config.Agent, shell bool) ([]byte, error) {
+	switch {
+	case agent.AuthCredentialsFile != "":
+		path := expandHome(agent.AuthCredentialsFile)
+		data, err := os.ReadFile(path) //nolint:gosec // path from validated config
+		if err != nil {
+			if shell {
+				return nil, nil
+			}
+			return nil, fmt.Errorf("read credentials file %s: %w", path, err)
+		}
+		return data, nil
+
+	case agent.AuthEnv != "":
+		v := os.Getenv(agent.AuthEnv)
+		if v == "" {
+			if shell {
+				return nil, nil
+			}
+			return nil, fmt.Errorf("environment variable %s is not set on the host", agent.AuthEnv)
+		}
+		return []byte(v + "\n"), nil
 	}
-	v := os.Getenv(agent.AuthEnv)
-	if v == "" && !shell {
-		return "", fmt.Errorf("environment variable %s is not set on the host", agent.AuthEnv)
+	return nil, nil
+}
+
+// expandHome resolves a leading "~/" or "~" against $HOME.
+func expandHome(p string) string {
+	if p == "~" {
+		h, _ := os.UserHomeDir()
+		return h
 	}
-	return v, nil
+	if strings.HasPrefix(p, "~/") {
+		h, _ := os.UserHomeDir()
+		return filepath.Join(h, p[2:])
+	}
+	return p
 }
 
 func buildDockerArgv(merged *config.Config, agent config.Agent, agentName string, agentArgs []string, cwd, socketDir string, shell bool) ([]string, error) {
@@ -108,11 +145,11 @@ func buildDockerArgv(merged *config.Config, agent config.Agent, agentName string
 	})
 }
 
-func pipeAPIKey(parent context.Context, stderr io.Writer, socketPath, apiKey string) {
+func pipeAuthSecret(parent context.Context, stderr io.Writer, socketPath string, secret []byte) {
 	ctx, cancel := context.WithTimeout(parent, keyholderTimeout)
 	defer cancel()
-	if err := dockerrun.PipeKey(ctx, socketPath, apiKey); err != nil {
-		fmt.Fprintln(stderr, "safe: pipe api key:", err) //nolint:errcheck // best-effort warning
+	if err := dockerrun.PipeKey(ctx, socketPath, string(secret)); err != nil {
+		fmt.Fprintln(stderr, "safe: pipe auth secret:", err) //nolint:errcheck // best-effort warning
 	}
 }
 
