@@ -84,6 +84,12 @@ func mergeAgent(base, overlay Agent) Agent {
 	if overlay.AuthEnv != "" {
 		out.AuthEnv = overlay.AuthEnv
 	}
+	if overlay.AuthCredentialsFile != "" {
+		out.AuthCredentialsFile = overlay.AuthCredentialsFile
+	}
+	if overlay.AuthRefreshURL != "" {
+		out.AuthRefreshURL = overlay.AuthRefreshURL
+	}
 	if overlay.BaseURLEnv != "" {
 		out.BaseURLEnv = overlay.BaseURLEnv
 	}

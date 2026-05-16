@@ -75,6 +75,14 @@ func validateAgent(name string, a Agent) error {
 	if a.Entrypoint == "" {
 		return fmt.Errorf("agent %q: entrypoint is required", name)
 	}
+	hasEnv := a.AuthEnv != ""
+	hasFile := a.AuthCredentialsFile != ""
+	switch {
+	case hasEnv && hasFile:
+		return fmt.Errorf("agent %q: set exactly one of auth_env or auth_credentials_file, not both", name)
+	case !hasEnv && !hasFile:
+		return fmt.Errorf("agent %q: one of auth_env (API key) or auth_credentials_file (OAuth) is required", name)
+	}
 	if len(a.LockedTools) == 0 {
 		return fmt.Errorf("agent %q: locked_tools must list at least one tool", name)
 	}

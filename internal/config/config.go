@@ -20,17 +20,29 @@ type Config struct {
 }
 
 // Agent is the registry entry for one supported agent (e.g. claude, opencode).
+//
+// Authentication has two mutually-exclusive modes:
+//   - API-key mode: set AuthEnv. The host env var holds a static key;
+//     keyholder injects it as a fixed Authorization header.
+//   - OAuth mode: set AuthCredentialsFile. The file (e.g.
+//     ~/.claude/.credentials.json) holds OAuth tokens; keyholder reads
+//     it at startup, injects the current access token, and refreshes
+//     via AuthRefreshURL when the token expires.
+//
+// Validation rejects configs that set both or neither.
 type Agent struct {
-	Image         string            `yaml:"image"`
-	Entrypoint    string            `yaml:"entrypoint"`
-	AuthEnv       string            `yaml:"auth_env"`
-	BaseURLEnv    string            `yaml:"base_url_env"`
-	BaseURL       string            `yaml:"base_url"`
-	AuthHeader    string            `yaml:"auth_header"`
-	AuthScheme    string            `yaml:"auth_scheme"`
-	LockedTools   []string          `yaml:"locked_tools"`
-	Env           map[string]string `yaml:"env"`
-	Customization Customization     `yaml:"customization"`
+	Image              string            `yaml:"image"`
+	Entrypoint         string            `yaml:"entrypoint"`
+	AuthEnv            string            `yaml:"auth_env"`
+	AuthCredentialsFile string           `yaml:"auth_credentials_file"`
+	AuthRefreshURL     string            `yaml:"auth_refresh_url"`
+	BaseURLEnv         string            `yaml:"base_url_env"`
+	BaseURL            string            `yaml:"base_url"`
+	AuthHeader         string            `yaml:"auth_header"`
+	AuthScheme         string            `yaml:"auth_scheme"`
+	LockedTools        []string          `yaml:"locked_tools"`
+	Env                map[string]string `yaml:"env"`
+	Customization      Customization     `yaml:"customization"`
 }
 
 // Customization controls which read-only subdirectories of ~/.claude are

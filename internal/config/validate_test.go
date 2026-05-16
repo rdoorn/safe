@@ -125,3 +125,34 @@ func TestValidateEmptyUpstreamDNS(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "upstream_dns")
 }
+
+func TestValidateAuthModeBothSet(t *testing.T) {
+	c := validBase()
+	a := c.Agents["claude"]
+	// validBase sets AuthEnv; also set the credentials-file field.
+	a.AuthCredentialsFile = "~/.claude/.credentials.json"
+	c.Agents["claude"] = a
+	err := config.Validate(c, "claude")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "exactly one")
+}
+
+func TestValidateAuthModeNeitherSet(t *testing.T) {
+	c := validBase()
+	a := c.Agents["claude"]
+	a.AuthEnv = ""
+	a.AuthCredentialsFile = ""
+	c.Agents["claude"] = a
+	err := config.Validate(c, "claude")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "required")
+}
+
+func TestValidateOAuthModeOK(t *testing.T) {
+	c := validBase()
+	a := c.Agents["claude"]
+	a.AuthEnv = ""
+	a.AuthCredentialsFile = "~/.claude/.credentials.json"
+	c.Agents["claude"] = a
+	require.NoError(t, config.Validate(c, "claude"))
+}

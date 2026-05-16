@@ -1,0 +1,50 @@
+# SAFE configuration for this project.
+# See docs/CONFIG.md for the full schema reference.
+# Validate the merged result with: safe --print-config
+
+agents:
+  claude:
+    image: ghcr.io/rdoorn/safe-runtime:0.1.0
+    entrypoint: claude
+    auth_env: ANTHROPIC_API_KEY
+    base_url_env: ANTHROPIC_BASE_URL
+    base_url: https://api.anthropic.com
+    auth_header: Authorization
+    auth_scheme: Bearer
+    locked_tools: [Read, Write, Edit, Bash, Glob, Grep, NotebookEdit]
+    env:
+      DISABLE_TELEMETRY: "1"
+      CLAUDE_CODE_DISABLE_AUTOUPDATER: "1"
+    customization:
+      skills: true
+      commands: true
+      claudemd: true
+      settings: false
+      statusline: false
+      hooks: false
+      plugins: false
+
+# FQDNs the agent is allowed to reach. Anything else returns NXDOMAIN.
+# Edit this list for your project's API endpoints.
+allowlist:
+  - api.anthropic.com
+  - registry.npmjs.org
+  - pypi.org
+  - files.pythonhosted.org
+  - proxy.golang.org
+  - sum.golang.org
+  - deb.debian.org
+
+upstream_dns:
+  - 1.1.1.1
+  - 1.0.0.1
+
+env_passthrough: [TERM, LANG, TZ]
+
+resources:
+  memory: 4g
+  pids: 256
+
+audit:
+  enabled: true
+  host_path: ~/.local/share/safe/audit.log
