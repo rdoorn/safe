@@ -6,7 +6,7 @@
 #   2. runtime  — Debian slim + curated tools + agent + SAFE binaries.
 
 ARG GO_VERSION=1.25.5
-ARG DEBIAN_TAG=bookworm-slim
+ARG DEBIAN_TAG=forky-slim
 ARG CLAUDE_CODE_VERSION=latest
 
 # -------------------------------------------------------------------- #
@@ -32,23 +32,19 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8
 
-# --- Base system + curated CLI tools ---
+# --- Base system + curated CLI tools (Node from Debian forky) ---
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates nftables iproute2 procps \
       git curl wget jq make \
       build-essential libcap2-bin \
       python3 python3-pip python3-venv \
+      nodejs npm \
       ripgrep fd-find \
       bash-completion vim-tiny less \
  && rm -rf /var/lib/apt/lists/*
 
 # Friendly alias: Debian ships fd-find as `fdfind` to avoid an apt collision.
 RUN ln -s /usr/bin/fdfind /usr/local/bin/fd
-
-# --- Node 20 (for Claude Code) via NodeSource ---
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
- && apt-get install -y --no-install-recommends nodejs \
- && rm -rf /var/lib/apt/lists/*
 
 # --- Go toolchain (for agent-side go build) ---
 RUN set -eux; \
