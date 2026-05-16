@@ -16,11 +16,21 @@ agents:
   claude:
     image: ghcr.io/rdoorn/safe-runtime:0.1.0
     entrypoint: claude
-    auth_env: ANTHROPIC_API_KEY
     base_url_env: ANTHROPIC_BASE_URL
     base_url: https://api.anthropic.com
-    auth_header: Authorization
-    auth_scheme: Bearer
+
+    # Choose exactly ONE auth mode:
+    #
+    # OAuth (Claude.ai / Claude Enterprise — default): keyholder reads
+    # the credentials.json that ` + "`claude login`" + ` writes on the host.
+    auth_credentials_file: ~/.claude/.credentials.json
+    auth_refresh_url: https://console.anthropic.com/v1/oauth/token
+    #
+    # API key (Anthropic Console): uncomment and remove the two lines above.
+    # auth_env: ANTHROPIC_API_KEY
+    # auth_header: Authorization
+    # auth_scheme: Bearer
+
     locked_tools: [Read, Write, Edit, Bash, Glob, Grep, NotebookEdit]
     env:
       DISABLE_TELEMETRY: "1"
@@ -38,6 +48,7 @@ agents:
 # Edit this list for your project's API endpoints.
 allowlist:
   - api.anthropic.com
+  - console.anthropic.com    # needed for OAuth token refresh; remove for API-key mode
   - registry.npmjs.org
   - pypi.org
   - files.pythonhosted.org
