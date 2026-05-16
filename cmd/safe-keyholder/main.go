@@ -1,15 +1,27 @@
 // Package main is the entrypoint for the LLM-API key-holder proxy (safe-keyholder).
 //
 // safe-keyholder runs as user `keyholder` inside the SAFE container. It
-// reads the real LLM API key from stdin once, then listens on
+// reads the agent's auth secret from stdin once, then listens on
 // 127.0.0.1:8443 and proxies requests to the configured upstream,
-// substituting the auth header so the agent never sees the key.
+// substituting the auth header so the agent never sees the secret.
+//
+// Two auth modes:
+//
+//   - --mode=apikey  (default): stdin is a single line containing a
+//     static API key. Injected verbatim as the configured auth header.
+//
+//   - --mode=oauth: stdin is the full Claude Code credentials.json JSON
+//     blob. Keyholder parses out the access/refresh tokens, uses the
+//     access token as a Bearer header, and refreshes against the OAuth
+//     refresh endpoint when the token expires.
 package main
 
 import (
+	"bufio"
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -25,6 +37,9 @@ const (
 	defaultConfigPath = "/etc/safe/config.yaml"
 	defaultListenAddr = "127.0.0.1:8443"
 	defaultShutdown   = 5 * time.Second
+	defaultRefreshURL = "https://console.anthropic.com/v1/oauth/token"
+	authModeAPIKey    = "apikey"
+	authModeOAuth     = "oauth"
 )
 
 func main() {
@@ -32,16 +47,17 @@ func main() {
 		configPath = flag.String("config", defaultConfigPath, "path to safe config")
 		listenAddr = flag.String("listen", defaultListenAddr, "host:port to listen on")
 		agentName  = flag.String("agent", "claude", "agent name to read from config")
+		mode       = flag.String("mode", authModeAPIKey, "auth mode: apikey | oauth")
 	)
 	flag.Parse()
 
-	if err := run(*configPath, *listenAddr, *agentName); err != nil {
+	if err := run(*configPath, *listenAddr, *agentName, *mode); err != nil {
 		fmt.Fprintln(os.Stderr, "safe-keyholder:", err)
 		os.Exit(1)
 	}
 }
 
-func run(configPath, listenAddr, agentName string) error {
+func run(configPath, listenAddr, agentName, mode string) error {
 	cfg, err := config.LoadFile(configPath)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
@@ -63,15 +79,15 @@ func run(configPath, listenAddr, agentName string) error {
 		authHeader = "Authorization"
 	}
 
-	key, err := keyholder.Bootstrap(os.Stdin)
+	token, scheme, err := buildTokenSource(mode, agent, os.Stdin)
 	if err != nil {
-		return fmt.Errorf("read key from stdin: %w", err)
+		return fmt.Errorf("build token source: %w", err)
 	}
 
 	proxy := keyholder.NewProxy(keyholder.ProxyConfig{
-		Key:        key,
+		Token:      token,
 		AuthHeader: authHeader,
-		AuthScheme: agent.AuthScheme,
+		AuthScheme: scheme,
 		Target:     target,
 	})
 
@@ -91,9 +107,42 @@ func run(configPath, listenAddr, agentName string) error {
 		_ = srv.Shutdown(shutdownCtx)
 	}()
 
-	fmt.Fprintln(os.Stderr, "safe-keyholder: listening on", listenAddr, "->", target.String())
+	fmt.Fprintln(os.Stderr, "safe-keyholder: listening on", listenAddr, "->", target.String(), "(mode:", mode+")")
 	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		return fmt.Errorf("listen: %w", err)
 	}
 	return nil
+}
+
+// buildTokenSource constructs the right keyholder.TokenSource for the
+// chosen auth mode and reads any required secrets from stdin.
+func buildTokenSource(mode string, agent config.Agent, stdin io.Reader) (keyholder.TokenSource, string, error) {
+	switch mode {
+	case authModeAPIKey:
+		key, err := keyholder.Bootstrap(stdin)
+		if err != nil {
+			return nil, "", fmt.Errorf("read key from stdin: %w", err)
+		}
+		return key, agent.AuthScheme, nil
+
+	case authModeOAuth:
+		blob, err := io.ReadAll(bufio.NewReader(stdin))
+		if err != nil {
+			return nil, "", fmt.Errorf("read credentials from stdin: %w", err)
+		}
+		creds, err := keyholder.ParseOAuthCredentials(blob)
+		if err != nil {
+			return nil, "", fmt.Errorf("parse credentials: %w", err)
+		}
+		refreshURL := agent.AuthRefreshURL
+		if refreshURL == "" {
+			refreshURL = defaultRefreshURL
+		}
+		ts := keyholder.NewOAuthTokenSource(creds, refreshURL, nil)
+		// OAuth always uses "Bearer" regardless of agent.AuthScheme.
+		return ts, "Bearer", nil
+
+	default:
+		return nil, "", fmt.Errorf("unknown auth mode %q (expected apikey or oauth)", mode)
+	}
 }

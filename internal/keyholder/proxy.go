@@ -8,7 +8,7 @@ import (
 
 // ProxyConfig holds everything NewProxy needs.
 type ProxyConfig struct {
-	Key        *Key
+	Token      TokenSource
 	AuthHeader string
 	AuthScheme string
 	Target     *url.URL
@@ -21,7 +21,7 @@ type ProxyConfig struct {
 //   - forward to the configured upstream.
 func NewProxy(cfg ProxyConfig) *httputil.ReverseProxy {
 	rw := &Rewriter{
-		Key:        cfg.Key,
+		Token:      cfg.Token,
 		AuthHeader: cfg.AuthHeader,
 		AuthScheme: cfg.AuthScheme,
 		Target:     cfg.Target,

@@ -27,7 +27,7 @@ func TestProxyForwardsAndRewrites(t *testing.T) {
 
 	target, _ := url.Parse(upstream.URL)
 	p := keyholder.NewProxy(keyholder.ProxyConfig{
-		Key:        keyholder.NewKey("sk-real"),
+		Token:      keyholder.NewKey("sk-real"),
 		AuthHeader: "Authorization",
 		AuthScheme: "Bearer",
 		Target:     target,

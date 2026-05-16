@@ -12,7 +12,7 @@ import (
 func TestRewriteBearerHeader(t *testing.T) {
 	target, _ := url.Parse("https://api.anthropic.com")
 	rw := &keyholder.Rewriter{
-		Key:        keyholder.NewKey("sk-secret"),
+		Token:      keyholder.NewKey("sk-secret"),
 		AuthHeader: "Authorization",
 		AuthScheme: "Bearer",
 		Target:     target,
@@ -33,7 +33,7 @@ func TestRewriteBearerHeader(t *testing.T) {
 func TestRewriteAPIKeyHeader(t *testing.T) {
 	target, _ := url.Parse("https://api.example.com")
 	rw := &keyholder.Rewriter{
-		Key:        keyholder.NewKey("sk-secret"),
+		Token:      keyholder.NewKey("sk-secret"),
 		AuthHeader: "x-api-key",
 		AuthScheme: "",
 		Target:     target,
@@ -49,7 +49,7 @@ func TestRewriteAPIKeyHeader(t *testing.T) {
 func TestRewriteStripsConflictingHeaders(t *testing.T) {
 	target, _ := url.Parse("https://api.example.com")
 	rw := &keyholder.Rewriter{
-		Key:        keyholder.NewKey("sk-real"),
+		Token:      keyholder.NewKey("sk-real"),
 		AuthHeader: "Authorization",
 		AuthScheme: "Bearer",
 		Target:     target,

@@ -5,12 +5,25 @@
 package keyholder
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
 )
 
-// Key is an opaque holder for the real API key. It hides the secret from
-// every code path except AuthHeaderValue, including fmt-printing.
+// TokenSource is anything that knows the current auth header value.
+// Implementations include Key (static API key, returns the same value
+// every call) and OAuthTokenSource (returns the current access token,
+// refreshing it when it's near expiry).
+type TokenSource interface {
+	// AuthHeaderValue returns the value to put in the configured auth
+	// header. scheme is the desired prefix ("Bearer", "" for raw).
+	// OAuth sources ignore scheme — they always use "Bearer".
+	AuthHeaderValue(scheme string) string
+	fmt.Stringer
+}
+
+// Key is an opaque holder for a static API key. It hides the secret
+// from every code path except AuthHeaderValue, including fmt-printing.
 type Key struct {
 	v string
 }
@@ -33,10 +46,11 @@ func (k *Key) AuthHeaderValue(scheme string) string {
 }
 
 // Rewriter rewrites an inbound request so it can be forwarded to the
-// real LLM endpoint with the real key.
+// real LLM endpoint with the real auth header.
 type Rewriter struct {
-	// Key holds the real auth secret.
-	Key *Key
+	// Token is the live source of the auth header value. Called on every
+	// proxied request so token rotation (OAuth) is picked up automatically.
+	Token TokenSource
 	// AuthHeader is the header name to set (e.g. "Authorization", "x-api-key").
 	AuthHeader string
 	// AuthScheme is the scheme prefix (e.g. "Bearer"). Empty for raw headers.
@@ -54,8 +68,8 @@ func (rw *Rewriter) Apply(r *http.Request) {
 	r.Header.Del("x-api-key")
 	r.Header.Del("X-Api-Key")
 
-	// Set the chosen header with the real key.
-	r.Header.Set(rw.AuthHeader, rw.Key.AuthHeaderValue(rw.AuthScheme))
+	// Set the chosen header with the live token value.
+	r.Header.Set(rw.AuthHeader, rw.Token.AuthHeaderValue(rw.AuthScheme))
 
 	// Rewrite destination to the upstream.
 	r.URL.Scheme = rw.Target.Scheme
