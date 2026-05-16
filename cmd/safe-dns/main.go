@@ -18,7 +18,6 @@ import (
 
 	"github.com/miekg/dns"
 	"github.com/rdoorn/safe/internal/config"
-	"github.com/rdoorn/safe/internal/firewall"
 	"github.com/rdoorn/safe/internal/resolver"
 )
 
@@ -34,7 +33,6 @@ func main() {
 		configPath = flag.String("config", defaultConfigPath, "path to safe config")
 		listenAddr = flag.String("listen", defaultListenAddr, "listen address (udp+tcp)")
 		auditPath  = flag.String("audit", defaultAuditPath, "audit log path (jsonl)")
-		nftPath    = flag.String("nft", firewall.DefaultNFTPath(), "path to nft binary")
 		minTTL     = flag.Duration("min-ttl", resolver.DefaultMinTTL, "minimum allow rule lifetime")
 		maxTTL     = flag.Duration("max-ttl", resolver.DefaultMaxTTL, "maximum allow rule lifetime")
 	)
@@ -45,21 +43,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := run(*configPath, *listenAddr, *auditPath, *nftPath, *minTTL, *maxTTL); err != nil {
+	if err := run(*configPath, *listenAddr, *auditPath, *minTTL, *maxTTL); err != nil {
 		fmt.Fprintln(os.Stderr, "safe-dns:", err)
 		os.Exit(1)
 	}
 }
 
-func run(configPath, listenAddr, auditPath, nftPath string, minTTL, maxTTL time.Duration) error {
-	// Raise ambient CAP_NET_ADMIN so the nft processes we fork inherit it.
-	// File capabilities don't propagate across exec into a binary that
-	// has none of its own, so without this nft would always fail.
-	if err := firewall.EnableAmbientCapNetAdmin(); err != nil {
-		fmt.Fprintln(os.Stderr, "safe-dns: cannot raise ambient CAP_NET_ADMIN:", err)
-		fmt.Fprintln(os.Stderr, "safe-dns: nft set updates will fail; continuing for diagnostics")
-	}
-
+func run(configPath, listenAddr, auditPath string, minTTL, maxTTL time.Duration) error {
 	cfg, err := config.LoadFile(configPath)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
@@ -89,7 +79,7 @@ func run(configPath, listenAddr, auditPath, nftPath string, minTTL, maxTTL time.
 	srv := &resolver.Server{
 		Matcher:  resolver.NewMatcher(cfg.Allowlist),
 		Upstream: newDNSClientUpstream(upstreams, defaultExchangeTTL),
-		Updater:  &resolver.SetUpdater{NFTPath: nftPath},
+		Updater:  &resolver.SetUpdater{},
 		Audit:    resolver.NewJSONLAuditor(auditFile),
 		ErrorLog: os.Stderr,
 		MinTTL:   minTTL,

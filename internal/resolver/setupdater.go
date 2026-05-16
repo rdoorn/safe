@@ -5,75 +5,101 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"strings"
 	"time"
-
-	"github.com/rdoorn/safe/internal/firewall"
 )
 
 // SetUpdater installs entries into the inet safe.allowed_v4 / allowed_v6
 // dynamic sets so the kernel accepts outbound traffic to a host the
 // agent just resolved through us.
+//
+// It uses netlink directly (via google/nftables) rather than fork+exec'ing
+// the nft CLI. The reason is Linux capability semantics: ambient
+// capabilities are per-thread, and Go's runtime schedules goroutines
+// across multiple OS threads — so the thread doing fork+exec usually
+// doesn't have ambient cap_net_admin even if the main thread does. With
+// netlink we stay in-process; cap_net_admin is in the effective set on
+// every thread (inherited at thread clone), so netlink calls succeed
+// from any goroutine.
 type SetUpdater struct {
-	// NFTPath is the absolute path to the nft binary. Empty falls back
-	// to firewall.DefaultNFTPath().
+	// TableName defaults to "safe".
+	TableName string
+	// SetNameV4 / SetNameV6 default to "allowed_v4" / "allowed_v6".
+	SetNameV4 string
+	SetNameV6 string
+
+	// NFTPath and Runner are retained for backwards compatibility with
+	// v1 wiring (cmd/safe-dns and tests). They are no longer used at
+	// runtime now that updates go via netlink.
 	NFTPath string
-	// Runner is swappable for tests. Nil falls back to firewall.ExecRunner.
-	Runner firewall.Runner
+	Runner  any
+}
+
+// IPBatch is the set-elements split into v4 and v6 by Add/AddMany. It is
+// exposed so the platform-specific netlink path can consume it.
+type ipBatch struct {
+	v4  []net.IP
+	v6  []net.IP
+	ttl time.Duration
 }
 
 // Add inserts a single IP into the appropriate set with the given timeout.
-// Whole-second resolution; sub-second ttls are rounded up to 1s.
 func (u *SetUpdater) Add(ctx context.Context, ip net.IP, ttl time.Duration) error {
 	return u.AddMany(ctx, []net.IP{ip}, ttl)
 }
 
-// AddMany inserts a batch in a single nft transaction.
-func (u *SetUpdater) AddMany(ctx context.Context, ips []net.IP, ttl time.Duration) error {
+// AddMany inserts a batch in a single netlink transaction.
+func (u *SetUpdater) AddMany(_ context.Context, ips []net.IP, ttl time.Duration) error {
 	if len(ips) == 0 {
 		return nil
 	}
+	u.applyDefaults()
 
-	var sb strings.Builder
+	batch := ipBatch{ttl: roundUpToSeconds(ttl)}
 	for _, ip := range ips {
 		if ip == nil {
 			return errors.New("nil IP")
 		}
-		setName := "allowed_v4"
-		canonical := ip.String()
 		if v4 := ip.To4(); v4 != nil {
-			canonical = v4.String()
+			batch.v4 = append(batch.v4, v4)
 		} else {
-			setName = "allowed_v6"
+			batch.v6 = append(batch.v6, ip.To16())
 		}
-		fmt.Fprintf(&sb, "add element inet safe %s { %s timeout %s }\n", setName, canonical, formatTTL(ttl))
 	}
 
-	nftPath := u.NFTPath
-	if nftPath == "" {
-		nftPath = firewall.DefaultNFTPath()
-	}
-	r := u.Runner
-	if r == nil {
-		r = firewall.ExecRunner{}
-	}
-
-	_, stderr, err := r.Run(ctx, nftPath, []string{"-f", "-"}, sb.String())
-	if err != nil {
-		msg := strings.TrimSpace(stderr)
-		if msg == "" {
-			msg = err.Error()
-		}
-		return fmt.Errorf("nft set add: %s", msg)
-	}
-	return nil
+	return u.applyToKernel(batch)
 }
 
-// formatTTL renders a duration as nft expects: integer seconds with a
-// trailing "s". Sub-second durations round up to 1s.
-func formatTTL(d time.Duration) string {
+func (u *SetUpdater) applyDefaults() {
+	if u.TableName == "" {
+		u.TableName = "safe"
+	}
+	if u.SetNameV4 == "" {
+		u.SetNameV4 = "allowed_v4"
+	}
+	if u.SetNameV6 == "" {
+		u.SetNameV6 = "allowed_v6"
+	}
+}
+
+// roundUpToSeconds rounds d up to the next whole second, with a minimum
+// of one second. nftables timeouts have second granularity.
+func roundUpToSeconds(d time.Duration) time.Duration {
 	if d < time.Second {
-		d = time.Second
+		return time.Second
 	}
-	return fmt.Sprintf("%ds", int64(d.Seconds()))
+	if d%time.Second == 0 {
+		return d
+	}
+	return (d/time.Second + 1) * time.Second
 }
+
+// errUnsupportedPlatform is returned by applyToKernel on non-Linux hosts
+// where netlink/nftables is not available. SetUpdater is only meant to
+// run inside the SAFE container (Linux); non-Linux compilation exists
+// only so the package builds on macOS for development.
+var errUnsupportedPlatform = errors.New("nftables set updates require Linux")
+
+// Compile-time guard that ipBatch is used; silences unused-warnings on
+// non-Linux builds where applyToKernel ignores it.
+var _ = ipBatch{}
+var _ = fmt.Sprintf

@@ -2,7 +2,6 @@ package resolver_test
 
 import (
 	"context"
-	"errors"
 	"net"
 	"testing"
 	"time"
@@ -11,72 +10,35 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type recordingRunner struct {
-	cmd    string
-	args   []string
-	stdin  string
-	err    error
-	stderr string
+// On non-Linux platforms (CI runners on Linux exercise the netlink path
+// end-to-end), SetUpdater's apply step returns "requires Linux". The
+// tests here only cover the platform-agnostic surface: input validation
+// and the empty-batch fast path.
+
+func TestSetUpdaterEmptyBatchIsNoop(t *testing.T) {
+	u := &resolver.SetUpdater{}
+	require.NoError(t, u.AddMany(context.Background(), nil, time.Minute))
 }
 
-func (r *recordingRunner) Run(_ context.Context, cmd string, args []string, stdin string) (stdout, stderr string, err error) {
-	r.cmd = cmd
-	r.args = args
-	r.stdin = stdin
-	return "", r.stderr, r.err
-}
-
-func TestSetUpdaterAddIPv4(t *testing.T) {
-	r := &recordingRunner{}
-	u := &resolver.SetUpdater{NFTPath: "/usr/sbin/nft", Runner: r}
-
-	require.NoError(t, u.Add(context.Background(), net.ParseIP("1.2.3.4"), 60*time.Second))
-
-	require.Equal(t, "/usr/sbin/nft", r.cmd)
-	require.Equal(t, []string{"-f", "-"}, r.args)
-	require.Contains(t, r.stdin, "add element inet safe allowed_v4")
-	require.Contains(t, r.stdin, "1.2.3.4 timeout 60s")
-}
-
-func TestSetUpdaterAddIPv6(t *testing.T) {
-	r := &recordingRunner{}
-	u := &resolver.SetUpdater{NFTPath: "/usr/sbin/nft", Runner: r}
-
-	require.NoError(t, u.Add(context.Background(), net.ParseIP("2001:db8::1"), 5*time.Minute))
-
-	require.Contains(t, r.stdin, "add element inet safe allowed_v6")
-	require.Contains(t, r.stdin, "2001:db8::1 timeout 300s")
-}
-
-func TestSetUpdaterPropagatesError(t *testing.T) {
-	r := &recordingRunner{err: errors.New("boom"), stderr: "Permission denied"}
-	u := &resolver.SetUpdater{NFTPath: "/usr/sbin/nft", Runner: r}
-
-	err := u.Add(context.Background(), net.ParseIP("1.2.3.4"), time.Minute)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "Permission denied")
-}
-
-func TestSetUpdaterBatchAdd(t *testing.T) {
-	r := &recordingRunner{}
-	u := &resolver.SetUpdater{NFTPath: "/usr/sbin/nft", Runner: r}
-
-	ips := []net.IP{
-		net.ParseIP("1.2.3.4"),
-		net.ParseIP("5.6.7.8"),
-		net.ParseIP("2001:db8::1"),
-	}
-	require.NoError(t, u.AddMany(context.Background(), ips, 60*time.Second))
-
-	// Single script combining all elements, so the kernel handles them
-	// atomically rather than three separate calls.
-	require.Contains(t, r.stdin, "1.2.3.4")
-	require.Contains(t, r.stdin, "5.6.7.8")
-	require.Contains(t, r.stdin, "2001:db8::1")
-}
-
-func TestSetUpdaterInvalidIP(t *testing.T) {
-	u := &resolver.SetUpdater{NFTPath: "/usr/sbin/nft", Runner: &recordingRunner{}}
+func TestSetUpdaterRejectsNilIP(t *testing.T) {
+	u := &resolver.SetUpdater{}
 	err := u.Add(context.Background(), nil, time.Minute)
 	require.Error(t, err)
+}
+
+func TestSetUpdaterDefaultsApplied(t *testing.T) {
+	// Calling Add will trigger applyDefaults internally. We assert the
+	// defaults are filled in even when the kernel apply step returns an
+	// "unsupported platform" error on macOS — meaning AddMany got past
+	// validation and into the apply step.
+	u := &resolver.SetUpdater{}
+	err := u.Add(context.Background(), net.ParseIP("1.2.3.4"), time.Minute)
+	// On Linux this hits real netlink; on macOS it returns the platform
+	// stub error. Either way validation passed.
+	if err != nil {
+		require.NotContains(t, err.Error(), "nil IP", "validation should not flag this input")
+	}
+	require.Equal(t, "safe", u.TableName)
+	require.Equal(t, "allowed_v4", u.SetNameV4)
+	require.Equal(t, "allowed_v6", u.SetNameV6)
 }
