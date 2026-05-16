@@ -31,18 +31,18 @@ type Config struct {
 //
 // Validation rejects configs that set both or neither.
 type Agent struct {
-	Image              string            `yaml:"image"`
-	Entrypoint         string            `yaml:"entrypoint"`
-	AuthEnv            string            `yaml:"auth_env"`
-	AuthCredentialsFile string           `yaml:"auth_credentials_file"`
-	AuthRefreshURL     string            `yaml:"auth_refresh_url"`
-	BaseURLEnv         string            `yaml:"base_url_env"`
-	BaseURL            string            `yaml:"base_url"`
-	AuthHeader         string            `yaml:"auth_header"`
-	AuthScheme         string            `yaml:"auth_scheme"`
-	LockedTools        []string          `yaml:"locked_tools"`
-	Env                map[string]string `yaml:"env"`
-	Customization      Customization     `yaml:"customization"`
+	Image               string            `yaml:"image"`
+	Entrypoint          string            `yaml:"entrypoint"`
+	AuthEnv             string            `yaml:"auth_env"`
+	AuthCredentialsFile string            `yaml:"auth_credentials_file"`
+	AuthRefreshURL      string            `yaml:"auth_refresh_url"`
+	BaseURLEnv          string            `yaml:"base_url_env"`
+	BaseURL             string            `yaml:"base_url"`
+	AuthHeader          string            `yaml:"auth_header"`
+	AuthScheme          string            `yaml:"auth_scheme"`
+	LockedTools         []string          `yaml:"locked_tools"`
+	Env                 map[string]string `yaml:"env"`
+	Customization       Customization     `yaml:"customization"`
 }
 
 // Customization controls which read-only subdirectories of ~/.claude are

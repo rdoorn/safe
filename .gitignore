@@ -7,3 +7,4 @@ coverage.txt
 .DS_Store
 /dist/
 .safe-test-config.yaml
+safe.yaml
