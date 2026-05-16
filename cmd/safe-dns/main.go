@@ -52,6 +52,14 @@ func main() {
 }
 
 func run(configPath, listenAddr, auditPath, nftPath string, minTTL, maxTTL time.Duration) error {
+	// Raise ambient CAP_NET_ADMIN so the nft processes we fork inherit it.
+	// File capabilities don't propagate across exec into a binary that
+	// has none of its own, so without this nft would always fail.
+	if err := firewall.EnableAmbientCapNetAdmin(); err != nil {
+		fmt.Fprintln(os.Stderr, "safe-dns: cannot raise ambient CAP_NET_ADMIN:", err)
+		fmt.Fprintln(os.Stderr, "safe-dns: nft set updates will fail; continuing for diagnostics")
+	}
+
 	cfg, err := config.LoadFile(configPath)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
@@ -83,6 +91,7 @@ func run(configPath, listenAddr, auditPath, nftPath string, minTTL, maxTTL time.
 		Upstream: newDNSClientUpstream(upstreams, defaultExchangeTTL),
 		Updater:  &resolver.SetUpdater{NFTPath: nftPath},
 		Audit:    resolver.NewJSONLAuditor(auditFile),
+		ErrorLog: os.Stderr,
 		MinTTL:   minTTL,
 		MaxTTL:   maxTTL,
 	}

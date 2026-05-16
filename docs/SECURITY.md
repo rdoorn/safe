@@ -42,8 +42,8 @@ An attacker who controls the agent's behaviour — through a prompt injection, a
 ### Container hardening
 
 - `--cap-drop ALL --cap-add NET_ADMIN` — the only capability is what nftables needs.
-- File capability `cap_net_admin+ep` on `safe-dns` so only that binary picks up the cap; the agent's bounding set is empty.
-- `--security-opt no-new-privileges` — exec can never gain capabilities.
+- File capability `cap_net_admin+ep` on `safe-dns`, locked to mode `0750` owned by `root:firewall`. Only `firewall` and `root` (i.e. `safe-init`) can execute it; the agent uid cannot exec it and therefore cannot harvest the file cap. `safe-dns` raises the cap into its **ambient** set at startup so the `nft` processes it forks inherit it.
+- **Note:** we deliberately do **not** pass `--security-opt no-new-privileges`. The kernel ignores file capabilities entirely under `no_new_privs`, which would break the `cap_net_admin` mechanism above. The protection `no-new-privs` would have given (preventing privilege gain via setuid/file-caps on exec) is achieved more narrowly via the `0750` permission on `safe-dns`, the absence of any setuid binaries in the image, and seccomp's denial of `ptrace`/`process_vm_*`.
 - `--security-opt seccomp=image/seccomp.json` — explicit allowlist syscall filter on top of Docker's default. Explicit denies: `ptrace`, `bpf`, `mount`, `umount`, `umount2`, `pivot_root`, `userfaultfd`, `kexec_load`, `init_module`, `delete_module`, `process_vm_readv`, `process_vm_writev`.
 - `--read-only` rootfs. Writes only through tmpfs (`/tmp`, `/run`, `/home/agent`) or named volumes.
 - `--pids-limit 256`, `--memory 4g` to bound fork-bomb / memory-pressure damage.

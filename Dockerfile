@@ -80,10 +80,17 @@ RUN set -eux; \
     groupadd --gid 1000 agent; \
     useradd  --uid 1000 --gid 1000 --home-dir /home/agent --create-home --shell /bin/bash agent
 
-# --- File capability for safe-dns ---
-# safe-dns needs CAP_NET_ADMIN to add/remove nftables set elements at runtime.
-# All other binaries run with zero capabilities.
-RUN setcap cap_net_admin+ep /usr/sbin/safe-dns
+# --- File capability and permission lockdown for safe-dns ---
+# safe-dns needs CAP_NET_ADMIN to add/remove nftables set elements at
+# runtime. All other binaries run with zero capabilities.
+#
+# We restrict safe-dns to mode 0750 owned by root:firewall so only the
+# firewall user (and root, i.e. safe-init) can execute it. This is the
+# narrow replacement for --security-opt no-new-privileges, which the
+# container does not set because it would disable file capabilities.
+RUN setcap cap_net_admin+ep /usr/sbin/safe-dns \
+ && chgrp firewall /usr/sbin/safe-dns \
+ && chmod 0750 /usr/sbin/safe-dns
 
 # --- Directories ---
 RUN mkdir -p /etc/safe /var/log/safe /run/safe /workspace \

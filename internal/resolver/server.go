@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"sync"
 	"time"
@@ -40,9 +41,22 @@ type Server struct {
 	MinTTL   time.Duration
 	MaxTTL   time.Duration
 
+	// ErrorLog, if non-nil, receives one-line messages for non-fatal
+	// runtime errors that would otherwise be swallowed (upstream lookup
+	// failures, nftables set-update failures). Production wires this to
+	// os.Stderr so SERVFAIL responses have a corresponding log line.
+	ErrorLog io.Writer
+
 	mu        sync.Mutex
 	udpServer *dns.Server
 	tcpServer *dns.Server
+}
+
+func (s *Server) logError(format string, args ...any) {
+	if s.ErrorLog == nil {
+		return
+	}
+	_, _ = fmt.Fprintf(s.ErrorLog, "safe-dns: "+format+"\n", args...)
 }
 
 // Start binds the configured listen address on both UDP and TCP and
@@ -118,6 +132,7 @@ func (s *Server) handle(w dns.ResponseWriter, r *dns.Msg) {
 
 	resp, err := s.Upstream.Exchange(ctx, r)
 	if err != nil || resp == nil {
+		s.logError("upstream exchange for %q: %v", q.Name, err)
 		_ = w.WriteMsg(servFailReply(r))
 		return
 	}
@@ -126,6 +141,7 @@ func (s *Server) handle(w dns.ResponseWriter, r *dns.Msg) {
 	if len(ips) > 0 {
 		ttl := ClampTTL(time.Duration(minTTL)*time.Second, s.MinTTL, s.MaxTTL)
 		if err := s.Updater.AddMany(ctx, ips, ttl); err != nil {
+			s.logError("nft set update for %q (%d ips): %v", q.Name, len(ips), err)
 			_ = w.WriteMsg(servFailReply(r))
 			return
 		}

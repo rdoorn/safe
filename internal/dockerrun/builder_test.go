@@ -39,7 +39,7 @@ func TestBuildArgvHasHardeningFlags(t *testing.T) {
 	require.Contains(t, joined, "-it")
 	require.Contains(t, joined, "--cap-drop ALL")
 	require.Contains(t, joined, "--cap-add NET_ADMIN")
-	require.Contains(t, joined, "--security-opt no-new-privileges")
+	require.NotContains(t, joined, "no-new-privileges", "no-new-privileges breaks file caps; agent isolation is via 0750 perms")
 	require.Contains(t, joined, "--security-opt seccomp=/etc/safe/seccomp.json")
 	require.Contains(t, joined, "--read-only")
 	require.Contains(t, joined, "--dns 127.0.0.1")

@@ -60,7 +60,13 @@ func BuildArgv(in Inputs) ([]string, error) {
 		"--hostname", "safe",
 		"--cap-drop", "ALL",
 		"--cap-add", "NET_ADMIN",
-		"--security-opt", "no-new-privileges",
+		// NB: we deliberately do NOT pass --security-opt no-new-privileges.
+		// The kernel ignores file capabilities under no_new_privs, which
+		// would break the cap_net_admin file cap on /usr/sbin/safe-dns.
+		// The narrow protection no-new-privs gives (preventing the agent
+		// from gaining caps by exec'ing a file-cap'd binary) is instead
+		// achieved by chmod 0750 + chgrp firewall on safe-dns inside the
+		// image — the agent uid can't exec safe-dns at all.
 		"--read-only",
 		"--tmpfs", "/tmp:rw,nosuid,nodev,noexec,size=256m",
 		"--tmpfs", "/run:rw,nosuid,nodev,noexec,size=64m",
