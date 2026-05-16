@@ -20,6 +20,7 @@ func newRootCmd() *cobra.Command {
 		doPrintConfig bool
 		doDoctor      bool
 		doShell       bool
+		doForce       bool
 	)
 
 	cmd := &cobra.Command{
@@ -44,6 +45,8 @@ func newRootCmd() *cobra.Command {
 				return runDoctor(cmd.Context(), cmd.OutOrStdout(), xdg, cwd, resolveAgentName(args))
 			case doShell:
 				return runAgent(cmd.Context(), cmd.OutOrStdout(), cmd.ErrOrStderr(), xdg, cwd, defaultAgentName, nil, true)
+			case len(args) > 0 && args[0] == "init":
+				return runInit(cmd.OutOrStdout(), cwd, doForce)
 			default:
 				if len(args) == 0 {
 					return cmd.Help()
@@ -58,6 +61,7 @@ func newRootCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&doPrintConfig, "print-config", false, "print the merged config as YAML and exit")
 	cmd.Flags().BoolVar(&doDoctor, "doctor", false, "run pre-flight checks and exit")
 	cmd.Flags().BoolVar(&doShell, "shell", false, "open an interactive bash shell inside the sandbox")
+	cmd.Flags().BoolVar(&doForce, "force", false, "overwrite existing files (used by `safe init`)")
 
 	return cmd
 }
