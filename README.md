@@ -21,14 +21,20 @@ You need two things: the `safe` host binary and the `safe-runtime` container ima
 
 ### 1. Host binary
 
-Build from source (this repo) until releases exist:
+Build and install from source (this repo) until releases exist:
 
 ```bash
 git clone <this-repo> && cd safe
-make build
-sudo install -m 0755 bin/safe /usr/local/bin/safe
+make install            # builds, then installs `safe` to /usr/local/bin (prompts for sudo if needed)
 safe --version
 ```
+
+Override the install location with `PREFIX`:
+```bash
+make install PREFIX=$HOME/.local    # ~/.local/bin/safe, no sudo
+```
+
+Remove with `make uninstall`.
 
 ### 2. Container image
 
