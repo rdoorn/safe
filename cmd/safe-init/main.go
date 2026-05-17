@@ -68,8 +68,14 @@ func main() {
 }
 
 func run(agentName string, agentArgs []string) error {
+	// hidepid=2 needs CAP_SYS_ADMIN; we don't grant it by default
+	// (NET_ADMIN is enough for everything else). Treat the remount as
+	// best-effort: without it, the agent uid can still see other users'
+	// PIDs (information disclosure only), but cannot read their environ,
+	// maps, or mem — those checks fire on uid regardless of hidepid.
 	if err := initd.RemountProcHidepid(defaultFirewallGID); err != nil {
-		return fmt.Errorf("remount /proc: %w", err)
+		fmt.Fprintln(os.Stderr, "safe-init: hidepid remount skipped:", err)
+		fmt.Fprintln(os.Stderr, "safe-init: add --cap-add SYS_ADMIN to docker run to enable PID hiding")
 	}
 
 	if err := runSafeFW(); err != nil {

@@ -48,12 +48,38 @@ func Run(ctx context.Context, deps Deps, cfg *config.Config, agentName string) [
 
 	if a, ok := cfg.Agents[agentName]; ok {
 		results = append(results, imagePresent(ctx, deps.Docker, a.Image))
-		if a.AuthEnv != "" {
+		switch {
+		case a.AuthEnv != "":
 			results = append(results, envSet(deps.Env, a.AuthEnv))
+		case a.AuthCredentialsFile != "":
+			results = append(results, credentialsFileReadable(a.AuthCredentialsFile))
 		}
 	}
 
 	return results
+}
+
+func credentialsFileReadable(path string) Result {
+	r := Result{Name: "credentials file"}
+	expanded := expandHomeDir(path)
+	info, err := osStat(expanded)
+	if err != nil {
+		r.Detail = fmt.Sprintf("%s: %v (run `claude login` on the host?)", expanded, err)
+		return r
+	}
+	if info.IsDir() {
+		r.Detail = fmt.Sprintf("%s is a directory, not a file", expanded)
+		return r
+	}
+	if info.Mode().Perm()&0o077 != 0 {
+		r.Detail = fmt.Sprintf("%s has world/group permissions (mode %o); chmod 0600 recommended", expanded, info.Mode().Perm())
+		// non-fatal: still mark OK but warn
+		r.OK = true
+		return r
+	}
+	r.OK = true
+	r.Detail = expanded
+	return r
 }
 
 func dockerReachable(ctx context.Context, dc DockerClient) Result {

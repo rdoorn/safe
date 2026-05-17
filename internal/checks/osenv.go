@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"strings"
 )
 
 // osLookupEnv is a tiny shim so checks_test.go can stay free of the os
@@ -15,4 +16,21 @@ func osLookupEnv(key string) (string, bool) {
 
 func isExitError(err error, target **exec.ExitError) bool {
 	return errors.As(err, target)
+}
+
+// osStat wraps os.Stat so tests can substitute. For now it's a direct
+// passthrough; the OAuth credentials check uses it.
+var osStat = os.Stat
+
+// expandHomeDir resolves a leading "~/" or "~" against $HOME.
+func expandHomeDir(p string) string {
+	if p == "~" {
+		h, _ := os.UserHomeDir()
+		return h
+	}
+	if strings.HasPrefix(p, "~/") {
+		h, _ := os.UserHomeDir()
+		return h + "/" + p[2:]
+	}
+	return p
 }
