@@ -19,8 +19,9 @@ func TestPrintConfigMergedYAML(t *testing.T) {
 		[]byte("allowlist:\n  - global.example.com\n"),
 		0o600,
 	))
+	require.NoError(t, os.MkdirAll(filepath.Join(cwd, ".safe"), 0o700))
 	require.NoError(t, os.WriteFile(
-		filepath.Join(cwd, "safe.yaml"),
+		filepath.Join(cwd, ".safe", "safe.yaml"),
 		[]byte("allowlist:\n  - project.example.com\n"),
 		0o600,
 	))

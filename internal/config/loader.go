@@ -36,7 +36,7 @@ func LoadFile(path string) (*Config, error) {
 func LoadAll(xdgConfigDir, cwd string) ([]*Config, error) {
 	paths := []string{
 		filepath.Join(xdgConfigDir, "safe", configFilename),
-		filepath.Join(cwd, configFilename),
+		filepath.Join(cwd, ".safe", configFilename),
 	}
 
 	var configs []*Config
