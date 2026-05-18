@@ -67,7 +67,16 @@ func BuildArgv(in Inputs) ([]string, error) {
 		"--name", "safe-" + in.RunID,
 		"--hostname", "safe",
 		"--cap-drop", "ALL",
+		// Required caps for SAFE's uid-separation architecture:
+		//   NET_ADMIN: safe-dns manages nftables sets at runtime.
+		//   SETUID/SETGID: safe-init (PID 1, root) spawns workers as
+		//     uids 200/201/1000 — without these, setresuid in the child
+		//     EPERMs even from root.
+		//   KILL: safe-init signals cross-uid children in supervise().
 		"--cap-add", "NET_ADMIN",
+		"--cap-add", "SETUID",
+		"--cap-add", "SETGID",
+		"--cap-add", "KILL",
 		// NB: we deliberately do NOT pass --security-opt no-new-privileges.
 		// The kernel ignores file capabilities under no_new_privs, which
 		// would break the cap_net_admin file cap on /usr/sbin/safe-dns.

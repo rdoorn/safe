@@ -146,3 +146,20 @@ func TestBuildArgvRequiresConfigDir(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "config dir")
 }
+
+func TestBuildArgvIncludesRequiredCaps(t *testing.T) {
+	argv, err := dockerrun.BuildArgv(dockerrun.Inputs{
+		Config:    minimalConfig(),
+		AgentName: "claude",
+		CWD:       "/p",
+		RunID:     "x",
+		SocketDir: "/tmp/safe-x",
+		ConfigDir: "/tmp/safe-cfg-x",
+	})
+	require.NoError(t, err)
+	joined := strings.Join(argv, " ")
+	for _, c := range []string{"NET_ADMIN", "SETUID", "SETGID", "KILL"} {
+		require.Contains(t, joined, "--cap-add "+c,
+			"%s must be in the required cap set: SAFE's uid-separation architecture cannot function without it", c)
+	}
+}
