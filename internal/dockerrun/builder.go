@@ -24,6 +24,9 @@ type Inputs struct {
 	// computed by customize.go for the active agent. Empty in tests
 	// that don't exercise customization.
 	MountFlags []string
+	// ConfigDir is the host directory holding the merged config.yaml.
+	// Bind-mounted read-only at /etc/safe inside the container.
+	ConfigDir string
 }
 
 // BuildArgv produces the full argv (starting with "docker" itself) that
@@ -38,6 +41,9 @@ func BuildArgv(in Inputs) ([]string, error) {
 	}
 	if agent.Image == "" {
 		return nil, fmt.Errorf("agent %q has no image", in.AgentName)
+	}
+	if in.ConfigDir == "" {
+		return nil, fmt.Errorf("config dir is required")
 	}
 
 	mem := in.Config.Resources.Memory
@@ -91,6 +97,7 @@ func BuildArgv(in Inputs) ([]string, error) {
 		"-v", in.CWD+":/workspace",
 		"-v", homeVolume+":/home/agent/.cache",
 		"-v", in.SocketDir+":/run/safe",
+		"-v", in.ConfigDir+":/etc/safe:ro",
 	)
 	argv = append(argv, in.MountFlags...)
 

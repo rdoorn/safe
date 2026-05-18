@@ -28,6 +28,7 @@ func TestBuildArgvHasHardeningFlags(t *testing.T) {
 		CWD:            "/Users/user/project",
 		RunID:          "run-abc123",
 		SocketDir:      "/tmp/safe-abc123",
+		ConfigDir:      "/tmp/safe-cfg-x",
 		TTY:            true,
 		SeccompProfile: "/etc/safe/seccomp.json",
 	})
@@ -53,6 +54,7 @@ func TestBuildArgvBindsWorkspace(t *testing.T) {
 		CWD:       "/Users/user/myproject",
 		RunID:     "x",
 		SocketDir: "/tmp/safe-x",
+		ConfigDir: "/tmp/safe-cfg-x",
 	})
 	require.NoError(t, err)
 	require.Contains(t, strings.Join(argv, " "), "-v /Users/user/myproject:/workspace")
@@ -65,6 +67,7 @@ func TestBuildArgvBindsSocketDir(t *testing.T) {
 		CWD:       "/p",
 		RunID:     "x",
 		SocketDir: "/tmp/safe-x",
+		ConfigDir: "/tmp/safe-cfg-x",
 	})
 	require.NoError(t, err)
 	require.Contains(t, strings.Join(argv, " "), "-v /tmp/safe-x:/run/safe")
@@ -91,6 +94,7 @@ func TestBuildArgvOnlyAllowedEnvPassthrough(t *testing.T) {
 		CWD:       "/p",
 		RunID:     "x",
 		SocketDir: "/tmp/safe-x",
+		ConfigDir: "/tmp/safe-cfg-x",
 	})
 	require.NoError(t, err)
 	joined := strings.Join(argv, " ")
@@ -106,6 +110,7 @@ func TestBuildArgvShellMode(t *testing.T) {
 		CWD:       "/p",
 		RunID:     "x",
 		SocketDir: "/tmp/safe-x",
+		ConfigDir: "/tmp/safe-cfg-x",
 		Shell:     true,
 	})
 	require.NoError(t, err)
@@ -114,4 +119,30 @@ func TestBuildArgvShellMode(t *testing.T) {
 	// lands directly in bash instead of going through safe-init.
 	require.Contains(t, joined, "--entrypoint /bin/bash")
 	require.NotContains(t, joined, "claude hello")
+}
+
+func TestBuildArgvBindsConfigDir(t *testing.T) {
+	argv, err := dockerrun.BuildArgv(dockerrun.Inputs{
+		Config:    minimalConfig(),
+		AgentName: "claude",
+		CWD:       "/p",
+		RunID:     "x",
+		SocketDir: "/tmp/safe-x",
+		ConfigDir: "/tmp/safe-cfg-x",
+	})
+	require.NoError(t, err)
+	require.Contains(t, strings.Join(argv, " "), "-v /tmp/safe-cfg-x:/etc/safe:ro")
+}
+
+func TestBuildArgvRequiresConfigDir(t *testing.T) {
+	_, err := dockerrun.BuildArgv(dockerrun.Inputs{
+		Config:    minimalConfig(),
+		AgentName: "claude",
+		CWD:       "/p",
+		RunID:     "x",
+		SocketDir: "/tmp/safe-x",
+		// ConfigDir intentionally omitted
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "config dir")
 }
