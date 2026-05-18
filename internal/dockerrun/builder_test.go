@@ -196,3 +196,18 @@ func TestBuildArgvNoExtraCapsByDefault(t *testing.T) {
 		"extra caps must be opt-in only")
 	require.NotContains(t, joined, "--cap-add SYS_PTRACE")
 }
+
+func TestBuildArgvTmpfsForAuditLog(t *testing.T) {
+	argv, err := dockerrun.BuildArgv(dockerrun.Inputs{
+		Config:    minimalConfig(),
+		AgentName: "claude",
+		CWD:       "/p",
+		RunID:     "x",
+		SocketDir: "/tmp/safe-x",
+		ConfigDir: "/tmp/safe-cfg-x",
+	})
+	require.NoError(t, err)
+	joined := strings.Join(argv, " ")
+	require.Contains(t, joined, "--tmpfs /var/log/safe:rw,nosuid,nodev,uid=200,gid=200,size=64m",
+		"safe-dns audit log needs a writable tmpfs since rootfs is read-only")
+}

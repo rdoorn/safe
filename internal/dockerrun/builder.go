@@ -97,6 +97,7 @@ func BuildArgv(in Inputs) ([]string, error) {
 		"--tmpfs", "/tmp:rw,nosuid,nodev,noexec,size=256m",
 		"--tmpfs", "/run:rw,nosuid,nodev,noexec,size=64m",
 		"--tmpfs", "/home/agent:rw,nosuid,nodev,size=512m",
+		"--tmpfs", "/var/log/safe:rw,nosuid,nodev,uid=200,gid=200,size=64m",
 		"--pids-limit", fmt.Sprintf("%d", pids),
 		"--memory", mem,
 		"--memory-swap", mem,
