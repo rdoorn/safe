@@ -17,6 +17,7 @@ import (
 
 	"github.com/rdoorn/safe/internal/config"
 	"github.com/rdoorn/safe/internal/dockerrun"
+	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -43,7 +44,17 @@ func runAgent(ctx context.Context, stdout, stderr io.Writer, xdgConfigDir, cwd, 
 	}
 	defer cleanupSocket()
 
-	argv, err := buildDockerArgv(merged, agent, agentName, agentArgs, cwd, socketDir, shell)
+	configYAML, err := yaml.Marshal(merged)
+	if err != nil {
+		return fmt.Errorf("marshal merged config: %w", err)
+	}
+	configDir, cleanupConfig, err := dockerrun.NewConfigDir("safe-cfg-", configYAML)
+	if err != nil {
+		return fmt.Errorf("create config dir: %w", err)
+	}
+	defer cleanupConfig()
+
+	argv, err := buildDockerArgv(merged, agent, agentName, agentArgs, cwd, socketDir, configDir, shell)
 	if err != nil {
 		return err
 	}
@@ -127,7 +138,7 @@ func expandHome(p string) string {
 	return p
 }
 
-func buildDockerArgv(merged *config.Config, agent config.Agent, agentName string, agentArgs []string, cwd, socketDir string, shell bool) ([]string, error) {
+func buildDockerArgv(merged *config.Config, agent config.Agent, agentName string, agentArgs []string, cwd, socketDir, configDir string, shell bool) ([]string, error) {
 	homeDir, _ := os.UserHomeDir()
 	claudeDir := filepath.Join(homeDir, ".claude")
 	mountFlags := dockerrun.ExpandMounts(claudeDir, agent.Customization)
@@ -139,6 +150,7 @@ func buildDockerArgv(merged *config.Config, agent config.Agent, agentName string
 		CWD:        cwd,
 		RunID:      newRunID(),
 		SocketDir:  socketDir,
+		ConfigDir:  configDir,
 		TTY:        isTerminal(os.Stdin),
 		Shell:      shell,
 		MountFlags: mountFlags,

@@ -42,6 +42,8 @@ func BuildArgv(in Inputs) ([]string, error) {
 	if agent.Image == "" {
 		return nil, fmt.Errorf("agent %q has no image", in.AgentName)
 	}
+	// ConfigDir is validated LAST so existing negative tests for missing
+	// agent/image keep tripping their own errors without needing it set.
 	if in.ConfigDir == "" {
 		return nil, fmt.Errorf("config dir is required")
 	}
