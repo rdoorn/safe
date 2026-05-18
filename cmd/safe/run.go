@@ -38,21 +38,20 @@ func runAgent(ctx context.Context, stdout, stderr io.Writer, xdgConfigDir, cwd, 
 		return err
 	}
 
-	socketDir, cleanupSocket, err := dockerrun.NewSocketDir("safe-")
-	if err != nil {
-		return fmt.Errorf("create socket dir: %w", err)
-	}
+	// TODO(taskD): wired in Task D — placeholder so the package compiles.
+	socketDir := ""
+	cleanupSocket := func() {}
 	defer cleanupSocket()
 
 	configYAML, err := yaml.Marshal(merged)
 	if err != nil {
 		return fmt.Errorf("marshal merged config: %w", err)
 	}
-	configDir, cleanupConfig, err := dockerrun.NewConfigDir("safe-cfg-", configYAML)
-	if err != nil {
-		return fmt.Errorf("create config dir: %w", err)
-	}
+	// TODO(taskD): wired in Task D — placeholder so the package compiles.
+	configDir := ""
+	cleanupConfig := func() {}
 	defer cleanupConfig()
+	_ = configYAML
 
 	argv, err := buildDockerArgv(merged, agent, agentName, agentArgs, cwd, socketDir, configDir, shell)
 	if err != nil {
