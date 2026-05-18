@@ -156,3 +156,34 @@ func TestValidateOAuthModeOK(t *testing.T) {
 	c.Agents["claude"] = a
 	require.NoError(t, config.Validate(c, "claude"))
 }
+
+func TestValidateExtraCapsAllowedNames(t *testing.T) {
+	cfg := validBase()
+	cfg.ExtraCaps = []string{"SYS_ADMIN"}
+	require.NoError(t, config.Validate(cfg, "claude"))
+}
+
+func TestValidateExtraCapsRejectsUnknown(t *testing.T) {
+	cfg := validBase()
+	cfg.ExtraCaps = []string{"DAC_OVERRIDE"}
+	err := config.Validate(cfg, "claude")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "extra_caps")
+	require.Contains(t, err.Error(), "DAC_OVERRIDE")
+}
+
+func TestValidateExtraCapsRejectsLowercase(t *testing.T) {
+	cfg := validBase()
+	cfg.ExtraCaps = []string{"sys_admin"}
+	err := config.Validate(cfg, "claude")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "extra_caps")
+}
+
+func TestValidateExtraCapsRejectsCAPPrefix(t *testing.T) {
+	cfg := validBase()
+	cfg.ExtraCaps = []string{"CAP_SYS_ADMIN"} // docker accepts both forms; we pick one
+	err := config.Validate(cfg, "claude")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "extra_caps")
+}

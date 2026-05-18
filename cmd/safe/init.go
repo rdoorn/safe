@@ -101,6 +101,15 @@ upstream_dns:
 # stripped. Default below is the conservative minimum.
 env_passthrough: [TERM, LANG, TZ]
 
+# Opt-in extra Linux capabilities granted to the container. Allowed:
+#   SYS_ADMIN        — enables /proc hidepid=2 (hides other uids' PIDs
+#                      from the agent uid).
+#   SYS_PTRACE       — diagnostic only; lets a debugger attach across
+#                      uids inside the container.
+#   NET_BIND_SERVICE — bind privileged ports inside the container.
+# Anything not on this list must be source-edited; see internal/config/validate.go.
+# extra_caps: []
+
 # Docker resource limits. Defaults shown.
 # resources:
 #   memory: 4g    # default

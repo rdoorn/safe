@@ -15,6 +15,7 @@ type Config struct {
 	UpstreamDNS    []string         `yaml:"upstream_dns"`
 	Mounts         []string         `yaml:"mounts"`
 	EnvPassthrough []string         `yaml:"env_passthrough"`
+	ExtraCaps      []string         `yaml:"extra_caps"`
 	Resources      Resources        `yaml:"resources"`
 	Audit          Audit            `yaml:"audit"`
 }

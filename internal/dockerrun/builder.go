@@ -77,6 +77,15 @@ func BuildArgv(in Inputs) ([]string, error) {
 		"--cap-add", "SETUID",
 		"--cap-add", "SETGID",
 		"--cap-add", "KILL",
+	}
+	// Opt-in extras from config. Validated against allowedExtraCaps at
+	// load time, so anything reaching here is one of SYS_ADMIN, SYS_PTRACE,
+	// or NET_BIND_SERVICE. Slice order is preserved; duplicates are not
+	// deduped (docker treats repeated --cap-add idempotently).
+	for _, c := range in.Config.ExtraCaps {
+		argv = append(argv, "--cap-add", c)
+	}
+	argv = append(argv,
 		// NB: we deliberately do NOT pass --security-opt no-new-privileges.
 		// The kernel ignores file capabilities under no_new_privs, which
 		// would break the cap_net_admin file cap on /usr/sbin/safe-dns.
@@ -94,7 +103,7 @@ func BuildArgv(in Inputs) ([]string, error) {
 		"--network", "bridge",
 		"--dns", "127.0.0.1",
 		"--env-file", "/dev/null",
-	}
+	)
 	if in.TTY {
 		argv = append(argv, "-it")
 	} else {

@@ -163,3 +163,36 @@ func TestBuildArgvIncludesRequiredCaps(t *testing.T) {
 			"%s must be in the required cap set: SAFE's uid-separation architecture cannot function without it", c)
 	}
 }
+
+func TestBuildArgvAppendsExtraCaps(t *testing.T) {
+	cfg := minimalConfig()
+	cfg.ExtraCaps = []string{"SYS_ADMIN", "SYS_PTRACE"}
+	argv, err := dockerrun.BuildArgv(dockerrun.Inputs{
+		Config:    cfg,
+		AgentName: "claude",
+		CWD:       "/p",
+		RunID:     "x",
+		SocketDir: "/tmp/safe-x",
+		ConfigDir: "/tmp/safe-cfg-x",
+	})
+	require.NoError(t, err)
+	joined := strings.Join(argv, " ")
+	require.Contains(t, joined, "--cap-add SYS_ADMIN")
+	require.Contains(t, joined, "--cap-add SYS_PTRACE")
+}
+
+func TestBuildArgvNoExtraCapsByDefault(t *testing.T) {
+	argv, err := dockerrun.BuildArgv(dockerrun.Inputs{
+		Config:    minimalConfig(),
+		AgentName: "claude",
+		CWD:       "/p",
+		RunID:     "x",
+		SocketDir: "/tmp/safe-x",
+		ConfigDir: "/tmp/safe-cfg-x",
+	})
+	require.NoError(t, err)
+	joined := strings.Join(argv, " ")
+	require.NotContains(t, joined, "--cap-add SYS_ADMIN",
+		"extra caps must be opt-in only")
+	require.NotContains(t, joined, "--cap-add SYS_PTRACE")
+}

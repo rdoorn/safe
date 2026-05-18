@@ -25,6 +25,32 @@ var KnownAgentTools = map[string]struct{}{
 	"TodoWrite":    {},
 }
 
+// allowedExtraCaps is the deliberately small allowlist of optional
+// container capabilities a user may add via extra_caps. Anything else
+// has to be source-edited so a misconfigured config can't widen the
+// container's bounding set into a sudden privilege-escalation surface.
+//
+//	SYS_ADMIN: enables /proc hidepid=2 remount (see safe-init).
+//	SYS_PTRACE: lets a debugger attach across uids inside the container
+//	  (advanced/diagnostic only).
+//	NET_BIND_SERVICE: binds privileged ports (<1024) — rarely needed
+//	  because Docker's default unprivileged-port range covers most cases,
+//	  but listed for completeness.
+var allowedExtraCaps = map[string]struct{}{
+	"SYS_ADMIN":        {},
+	"SYS_PTRACE":       {},
+	"NET_BIND_SERVICE": {},
+}
+
+func validateExtraCaps(caps []string) error {
+	for _, c := range caps {
+		if _, ok := allowedExtraCaps[c]; !ok {
+			return fmt.Errorf("extra_caps: %q is not allowed (allowed: SYS_ADMIN, SYS_PTRACE, NET_BIND_SERVICE)", c)
+		}
+	}
+	return nil
+}
+
 // fqdnPattern matches an absolute domain name in lowercase form, with an
 // optional leading "*." wildcard as the leftmost label only.
 var fqdnPattern = regexp.MustCompile(`^(\*\.)?([a-z0-9](-?[a-z0-9])*)(\.[a-z0-9](-?[a-z0-9])*)+$`)
@@ -55,7 +81,11 @@ func Validate(c *Config, agentName string) error {
 		return err
 	}
 
-	return validateBaseURLAllowlisted(agent.BaseURL, c.Allowlist)
+	if err := validateBaseURLAllowlisted(agent.BaseURL, c.Allowlist); err != nil {
+		return err
+	}
+
+	return validateExtraCaps(c.ExtraCaps)
 }
 
 func validateAllowlist(entries []string) error {
