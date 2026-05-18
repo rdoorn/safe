@@ -7,3 +7,4 @@ dist/
 docs/
 *.md
 .DS_Store
+.safe/
