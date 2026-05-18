@@ -8,27 +8,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestNewSocketDirCreatesAndCleans(t *testing.T) {
-	path, cleanup, err := dockerrun.NewSocketDir("safe-")
-	require.NoError(t, err)
-	t.Cleanup(cleanup)
+func TestPrepareSocketDirSets0700(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, dockerrun.PrepareSocketDir(dir))
 
-	info, err := os.Stat(path)
+	fi, err := os.Stat(dir)
 	require.NoError(t, err)
-	require.True(t, info.IsDir())
-	require.Equal(t, os.FileMode(0o700), info.Mode().Perm())
-
-	cleanup()
-	_, err = os.Stat(path)
-	require.True(t, os.IsNotExist(err), "cleanup removed the dir")
-}
-
-func TestNewSocketDirUniquePerCall(t *testing.T) {
-	a, ca, err := dockerrun.NewSocketDir("safe-")
-	require.NoError(t, err)
-	defer ca()
-	b, cb, err := dockerrun.NewSocketDir("safe-")
-	require.NoError(t, err)
-	defer cb()
-	require.NotEqual(t, a, b)
+	require.Equal(t, os.FileMode(0o700), fi.Mode().Perm())
 }

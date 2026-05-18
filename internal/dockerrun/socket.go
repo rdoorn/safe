@@ -5,21 +5,12 @@ import (
 	"os"
 )
 
-// NewSocketDir creates a fresh per-run directory at mode 0700 under the
-// system temp root with the given prefix. The returned cleanup function
-// removes the directory and any contents; callers must call it when the
-// container exits.
-func NewSocketDir(prefix string) (string, func(), error) {
-	dir, err := os.MkdirTemp("", prefix)
-	if err != nil {
-		return "", func() {}, fmt.Errorf("mktemp: %w", err)
+// PrepareSocketDir assumes dir exists; sets it to 0700 so only the host
+// user (and root inside the container, which creates the socket) can
+// traverse to safe-keyholder's bootstrap socket.
+func PrepareSocketDir(dir string) error {
+	if err := os.Chmod(dir, 0o700); err != nil {
+		return fmt.Errorf("chmod %s: %w", dir, err)
 	}
-	// MkdirTemp creates with 0o700 by default; assert explicitly to
-	// guard against future stdlib changes.
-	if err := os.Chmod(dir, 0o700); err != nil { //nolint:gosec // 0o700 is intentionally restrictive; gosec wants <=0o600 for files but this is a directory
-		_ = os.RemoveAll(dir)
-		return "", func() {}, fmt.Errorf("chmod %s: %w", dir, err)
-	}
-	cleanup := func() { _ = os.RemoveAll(dir) }
-	return dir, cleanup, nil
+	return nil
 }
