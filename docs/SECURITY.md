@@ -41,12 +41,26 @@ An attacker who controls the agent's behaviour — through a prompt injection, a
 
 ### Container hardening
 
-- `--cap-drop ALL --cap-add NET_ADMIN` — the only capability is what nftables needs.
+- `--cap-drop ALL` plus a deliberately small **required** capability set:
+  - `NET_ADMIN` — safe-dns manages nftables sets at runtime.
+  - `SETUID` / `SETGID` — `safe-init` (PID 1, root) spawns workers as uids 200/201/1000 via `setresuid`/`setresgid`. Without these the architecture can't function (Linux drops these from the bounding set under `--cap-drop ALL`).
+  - `KILL` — `safe-init` signals cross-uid children in `supervise` at shutdown.
+- An **opt-in** `extra_caps` field in `safe.yaml` may add capabilities from a small allowlist: `SYS_ADMIN` (enables `/proc hidepid=2`), `SYS_PTRACE` (cross-uid debugger attach; diagnostic only), `NET_BIND_SERVICE` (privileged ports). Anything outside that allowlist requires source-editing; this prevents a misconfigured config from silently widening the bounding set to e.g. `DAC_OVERRIDE`.
 - File capability `cap_net_admin+ep` on `safe-dns`, locked to mode `0750` owned by `root:firewall`. Only `firewall` and `root` (i.e. `safe-init`) can execute it; the agent uid cannot exec it and therefore cannot harvest the file cap. `safe-dns` raises the cap into its **ambient** set at startup so the `nft` processes it forks inherit it.
 - **Note:** we deliberately do **not** pass `--security-opt no-new-privileges`. The kernel ignores file capabilities entirely under `no_new_privs`, which would break the `cap_net_admin` mechanism above. The protection `no-new-privs` would have given (preventing privilege gain via setuid/file-caps on exec) is achieved more narrowly via the `0750` permission on `safe-dns`, the absence of any setuid binaries in the image, and seccomp's denial of `ptrace`/`process_vm_*`.
 - `--security-opt seccomp=image/seccomp.json` — explicit allowlist syscall filter on top of Docker's default. Explicit denies: `ptrace`, `bpf`, `mount`, `umount`, `umount2`, `pivot_root`, `userfaultfd`, `kexec_load`, `init_module`, `delete_module`, `process_vm_readv`, `process_vm_writev`.
 - `--read-only` rootfs. Writes only through tmpfs (`/tmp`, `/run`, `/home/agent`) or named volumes.
 - `--pids-limit 256`, `--memory 4g` to bound fork-bomb / memory-pressure damage.
+
+#### Threat model note on the required cap set
+
+`SETUID` / `SETGID` / `KILL` are inside the container's bounding set for as long as the container is alive. An attacker who escapes to **in-container root** would therefore be able to `setresuid` to any uid and signal any process. In practice:
+
+- Escape from the agent uid (1000) to in-container root is not a one-step move: it requires either kernel-level privilege escalation (out of SAFE's scope; mitigated by seccomp + `--read-only` + minimal cap set) or a setuid binary in the image (none exist; hardening pass at build time removes them).
+- Once in-container root, an attacker who can `setresuid 201` can attach to the keyholder process and read the secret from memory — BUT this requires both (a) container-root escape AND (b) the seccomp `ptrace` / `process_vm_*` denial to be bypassed. Both happening simultaneously is already the "kernel zero-day" failure mode acknowledged in the residual-risk section.
+- Without `SYS_ADMIN` enabled via `extra_caps`, `/proc hidepid=2` is best-effort and the agent uid can list other uids' PIDs. The kernel still blocks `/proc/<keyholder>/{mem,environ,maps}` via uid checks regardless of hidepid, so the secret stays out of reach — information disclosure only.
+
+**Recommendation:** for production use, set `extra_caps: [SYS_ADMIN]` in `safe.yaml`. This enables `hidepid=2`, hardening the in-container side of the keyholder isolation.
 
 ### Escalation
 
@@ -73,7 +87,7 @@ These are stated up front so users aren't surprised.
 | Agent connects to attacker-controlled host | nftables default-drop + FQDN allowlist + no raw-IP allowance |
 | Agent reads SSH/AWS/etc. host secrets | Default-empty bind mounts + env-var allowlist + denylisted paths |
 | Agent persists payloads | Read-only rootfs + tmpfs-only writes outside `/workspace` |
-| Agent escalates to root inside container | No setuid + no sudo + no-new-privs + zero capability bounding set for uid 1000 |
+| Agent escalates to root inside container | No setuid binaries + no sudo + minimal bounding set + seccomp denies `ptrace`/`process_vm_*` + agent uid 1000 has zero effective caps. Bounding set includes SETUID/SETGID/KILL (required for the architecture); container-root escape is still required before those become reachable. |
 | Agent escapes to host | --cap-drop ALL + custom seccomp + no docker.sock mount |
 | User pastes credential at prompt | Not mitigated — accepted risk |
 | LLM provider is malicious | Not mitigated — trust boundary by definition |
@@ -92,6 +106,8 @@ echo "$ANTHROPIC_API_KEY"                         # empty / dummy
 find / -perm /4000 -type f 2>/dev/null            # empty
 getcap /usr/sbin/safe-dns                         # cap_net_admin+ep
 gdb -p $(pgrep -u keyholder safe-keyholder)       # permission denied
+cat /proc/$(pgrep -u keyholder safe-keyholder)/mem  # permission denied (uid check; works even without hidepid)
+docker inspect --format '{{.HostConfig.CapAdd}}' safe-<runid>  # [NET_ADMIN SETUID SETGID KILL ...]
 ```
 
 A formal CI integration test that asserts each of these will land in M8 of the implementation plan.
