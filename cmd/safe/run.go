@@ -38,22 +38,34 @@ func runAgent(ctx context.Context, stdout, stderr io.Writer, xdgConfigDir, cwd, 
 		return err
 	}
 
-	// TODO(taskD): wired in Task D — placeholder so the package compiles.
-	socketDir := ""
-	cleanupSocket := func() {}
-	defer cleanupSocket()
+	runID := newRunID()
+	runRoot := filepath.Join(cwd, ".safe", runID)
+	if err := os.MkdirAll(runRoot, 0o755); err != nil { //nolint:gosec // 0o755 is intentional; container uids must traverse
+		return fmt.Errorf("create run dir %s: %w", runRoot, err)
+	}
+	defer func() { _ = os.RemoveAll(runRoot) }()
+
+	socketDir := filepath.Join(runRoot, "socket")
+	if err := os.Mkdir(socketDir, 0o700); err != nil {
+		return fmt.Errorf("create socket dir: %w", err)
+	}
+	if err := dockerrun.PrepareSocketDir(socketDir); err != nil {
+		return err
+	}
 
 	configYAML, err := yaml.Marshal(merged)
 	if err != nil {
 		return fmt.Errorf("marshal merged config: %w", err)
 	}
-	// TODO(taskD): wired in Task D — placeholder so the package compiles.
-	configDir := ""
-	cleanupConfig := func() {}
-	defer cleanupConfig()
-	_ = configYAML
+	configDir := filepath.Join(runRoot, "config")
+	if err := os.Mkdir(configDir, 0o755); err != nil { //nolint:gosec // 0o755 is intentional; container uids must traverse
+		return fmt.Errorf("create config dir: %w", err)
+	}
+	if err := dockerrun.WriteConfigDir(configDir, configYAML); err != nil {
+		return err
+	}
 
-	argv, err := buildDockerArgv(merged, agent, agentName, agentArgs, cwd, socketDir, configDir, shell)
+	argv, err := buildDockerArgv(merged, agent, agentName, agentArgs, cwd, runID, socketDir, configDir, shell)
 	if err != nil {
 		return err
 	}
@@ -137,7 +149,7 @@ func expandHome(p string) string {
 	return p
 }
 
-func buildDockerArgv(merged *config.Config, agent config.Agent, agentName string, agentArgs []string, cwd, socketDir, configDir string, shell bool) ([]string, error) {
+func buildDockerArgv(merged *config.Config, agent config.Agent, agentName string, agentArgs []string, cwd, runID, socketDir, configDir string, shell bool) ([]string, error) {
 	homeDir, _ := os.UserHomeDir()
 	claudeDir := filepath.Join(homeDir, ".claude")
 	mountFlags := dockerrun.ExpandMounts(claudeDir, agent.Customization)
@@ -147,7 +159,7 @@ func buildDockerArgv(merged *config.Config, agent config.Agent, agentName string
 		AgentName:  agentName,
 		AgentArgs:  agentArgs,
 		CWD:        cwd,
-		RunID:      newRunID(),
+		RunID:      runID,
 		SocketDir:  socketDir,
 		ConfigDir:  configDir,
 		TTY:        isTerminal(os.Stdin),
