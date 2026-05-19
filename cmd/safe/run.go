@@ -21,8 +21,7 @@ import (
 )
 
 const (
-	keyholderSocketFile = "keyholder.sock"
-	keyholderTimeout    = 10 * time.Second
+	keyholderTimeout = 10 * time.Second
 )
 
 // runAgent is the path executed when the user runs `safe <agent> [args...]`.
@@ -45,14 +44,6 @@ func runAgent(ctx context.Context, stdout, stderr io.Writer, xdgConfigDir, cwd, 
 	}
 	defer func() { _ = os.RemoveAll(runRoot) }()
 
-	socketDir := filepath.Join(runRoot, "socket")
-	if err := os.Mkdir(socketDir, 0o700); err != nil {
-		return fmt.Errorf("create socket dir: %w", err)
-	}
-	if err := dockerrun.PrepareSocketDir(socketDir); err != nil {
-		return err
-	}
-
 	configYAML, err := yaml.Marshal(merged)
 	if err != nil {
 		return fmt.Errorf("marshal merged config: %w", err)
@@ -65,7 +56,7 @@ func runAgent(ctx context.Context, stdout, stderr io.Writer, xdgConfigDir, cwd, 
 		return err
 	}
 
-	argv, err := buildDockerArgv(merged, agent, agentName, agentArgs, cwd, runID, socketDir, configDir, shell)
+	argv, err := buildDockerArgv(merged, agent, agentName, agentArgs, cwd, runID, configDir, shell)
 	if err != nil {
 		return err
 	}
@@ -79,7 +70,7 @@ func runAgent(ctx context.Context, stdout, stderr io.Writer, xdgConfigDir, cwd, 
 	}
 
 	if !shell && len(secret) > 0 {
-		go pipeAuthSecret(ctx, stderr, filepath.Join(socketDir, keyholderSocketFile), secret)
+		go pipeAuthSecret(ctx, stderr, "safe-"+runID, secret)
 	}
 	go forwardSignalsToDocker(cmd)
 
@@ -149,7 +140,7 @@ func expandHome(p string) string {
 	return p
 }
 
-func buildDockerArgv(merged *config.Config, agent config.Agent, agentName string, agentArgs []string, cwd, runID, socketDir, configDir string, shell bool) ([]string, error) {
+func buildDockerArgv(merged *config.Config, agent config.Agent, agentName string, agentArgs []string, cwd, runID, configDir string, shell bool) ([]string, error) {
 	homeDir, _ := os.UserHomeDir()
 	claudeDir := filepath.Join(homeDir, ".claude")
 	mountFlags := dockerrun.ExpandMounts(claudeDir, agent.Customization)
@@ -160,7 +151,6 @@ func buildDockerArgv(merged *config.Config, agent config.Agent, agentName string
 		AgentArgs:  agentArgs,
 		CWD:        cwd,
 		RunID:      runID,
-		SocketDir:  socketDir,
 		ConfigDir:  configDir,
 		TTY:        isTerminal(os.Stdin),
 		Shell:      shell,
@@ -168,10 +158,10 @@ func buildDockerArgv(merged *config.Config, agent config.Agent, agentName string
 	})
 }
 
-func pipeAuthSecret(parent context.Context, stderr io.Writer, socketPath string, secret []byte) {
+func pipeAuthSecret(parent context.Context, stderr io.Writer, containerName string, secret []byte) {
 	ctx, cancel := context.WithTimeout(parent, keyholderTimeout)
 	defer cancel()
-	if err := dockerrun.PipeKey(ctx, socketPath, string(secret)); err != nil {
+	if err := dockerrun.PipeKey(ctx, containerName, string(secret)); err != nil {
 		fmt.Fprintln(stderr, "safe: pipe auth secret:", err) //nolint:errcheck // best-effort warning
 	}
 }

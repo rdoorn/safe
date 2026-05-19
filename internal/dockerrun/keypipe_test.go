@@ -2,13 +2,7 @@ package dockerrun_test
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
-	"io"
 	"net"
-	"os"
-	"path/filepath"
-	"sync"
 	"testing"
 	"time"
 
@@ -16,69 +10,51 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// shortTempDir returns a short path under /tmp suitable for hosting a
-// Unix domain socket on macOS (where t.TempDir paths exceed the 104-char
-// sun_path limit).
-func shortTempDir(_ string) (string, error) {
-	b := make([]byte, 4)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	p := filepath.Join("/tmp", "safe-test-"+hex.EncodeToString(b))
-	if err := os.Mkdir(p, 0o700); err != nil {
-		return "", err
-	}
-	return p, nil
+// TestPipeKeyTimesOutOnUnknownContainer exercises the discovery loop's
+// timeout path: `docker port` exits non-zero immediately for an unknown
+// container, but PipeKey should keep retrying within its deadline and
+// return a wrapped error when the deadline expires.
+func TestPipeKeyTimesOutOnUnknownContainer(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 800*time.Millisecond)
+	defer cancel()
+
+	err := dockerrun.PipeKey(ctx, "safe-nonexistent-container-for-test", "secret")
+	require.Error(t, err)
 }
 
-func TestPipeKeyWritesOneLineAndCloses(t *testing.T) {
-	// Use a short path because UNIX socket paths are limited (~104 chars
-	// on macOS, 108 on Linux). t.TempDir() under /var/folders/ on macOS
-	// blows past that limit with even modest test names.
-	dir, err := shortTempDir(t.Name())
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	socketPath := filepath.Join(dir, "k.sock")
-
-	got := make(chan string, 1)
-	var wg sync.WaitGroup
-	wg.Add(1)
-	ln, err := net.Listen("unix", socketPath)
+// TestRawTCPSecretDelivery is a lower-level sanity check on the wire
+// format: a goroutine accepts on a local listener; we manually dial it
+// and write `<secret>\n`; the receiver reads it back. This isn't a test
+// of PipeKey itself (we don't go through `docker port`) but it locks in
+// the wire format the in-container reader expects.
+func TestRawTCPSecretDelivery(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	defer func() { _ = ln.Close() }()
 
+	gotCh := make(chan string, 1)
 	go func() {
-		defer wg.Done()
 		conn, err := ln.Accept()
 		if err != nil {
-			got <- "<accept failed: " + err.Error() + ">"
+			gotCh <- ""
 			return
 		}
 		defer func() { _ = conn.Close() }()
-		b, _ := io.ReadAll(conn)
-		got <- string(b)
+		buf := make([]byte, 1024)
+		n, _ := conn.Read(buf)
+		gotCh <- string(buf[:n])
 	}()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	require.NoError(t, dockerrun.PipeKey(ctx, socketPath, "sk-test"))
-
-	wg.Wait()
-	select {
-	case s := <-got:
-		require.Equal(t, "sk-test\n", s)
-	case <-time.After(time.Second):
-		t.Fatal("never received the key on the socket")
-	}
-}
-
-func TestPipeKeyTimesOutIfNoListener(t *testing.T) {
-	dir, err := shortTempDir(t.Name())
+	conn, err := net.Dial("tcp", ln.Addr().String())
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	socketPath := filepath.Join(dir, "no.sock")
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
-	defer cancel()
-	err = dockerrun.PipeKey(ctx, socketPath, "sk-test")
-	require.Error(t, err)
+	_, err = conn.Write([]byte("secret-bytes\n"))
+	require.NoError(t, err)
+	require.NoError(t, conn.Close())
+
+	select {
+	case got := <-gotCh:
+		require.Equal(t, "secret-bytes\n", got)
+	case <-time.After(2 * time.Second):
+		t.Fatal("receiver did not deliver bytes")
+	}
 }

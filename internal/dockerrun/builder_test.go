@@ -27,7 +27,6 @@ func TestBuildArgvHasHardeningFlags(t *testing.T) {
 		AgentArgs:      []string{"hello"},
 		CWD:            "/Users/user/project",
 		RunID:          "run-abc123",
-		SocketDir:      "/tmp/safe-abc123",
 		ConfigDir:      "/tmp/safe-cfg-x",
 		TTY:            true,
 		SeccompProfile: "/etc/safe/seccomp.json",
@@ -53,24 +52,35 @@ func TestBuildArgvBindsWorkspace(t *testing.T) {
 		AgentName: "claude",
 		CWD:       "/Users/user/myproject",
 		RunID:     "x",
-		SocketDir: "/tmp/safe-x",
 		ConfigDir: "/tmp/safe-cfg-x",
 	})
 	require.NoError(t, err)
 	require.Contains(t, strings.Join(argv, " "), "-v /Users/user/myproject:/workspace")
 }
 
-func TestBuildArgvBindsSocketDir(t *testing.T) {
+func TestBuildArgvPublishesBootstrapPort(t *testing.T) {
 	argv, err := dockerrun.BuildArgv(dockerrun.Inputs{
 		Config:    minimalConfig(),
 		AgentName: "claude",
 		CWD:       "/p",
 		RunID:     "x",
-		SocketDir: "/tmp/safe-x",
 		ConfigDir: "/tmp/safe-cfg-x",
 	})
 	require.NoError(t, err)
-	require.Contains(t, strings.Join(argv, " "), "-v /tmp/safe-x:/run/safe")
+	require.Contains(t, strings.Join(argv, " "), "-p 127.0.0.1:0:9099/tcp")
+}
+
+func TestBuildArgvDoesNotBindRunSafe(t *testing.T) {
+	argv, err := dockerrun.BuildArgv(dockerrun.Inputs{
+		Config:    minimalConfig(),
+		AgentName: "claude",
+		CWD:       "/p",
+		RunID:     "x",
+		ConfigDir: "/tmp/safe-cfg-x",
+	})
+	require.NoError(t, err)
+	require.NotContains(t, strings.Join(argv, " "), "/run/safe",
+		"socket dir bind mount has been replaced by TCP loopback")
 }
 
 func TestBuildArgvAgentNotInConfig(t *testing.T) {
@@ -79,7 +89,6 @@ func TestBuildArgvAgentNotInConfig(t *testing.T) {
 		AgentName: "ghost",
 		CWD:       "/p",
 		RunID:     "x",
-		SocketDir: "/tmp/safe-x",
 	})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "ghost")
@@ -93,7 +102,6 @@ func TestBuildArgvOnlyAllowedEnvPassthrough(t *testing.T) {
 		AgentName: "claude",
 		CWD:       "/p",
 		RunID:     "x",
-		SocketDir: "/tmp/safe-x",
 		ConfigDir: "/tmp/safe-cfg-x",
 	})
 	require.NoError(t, err)
@@ -109,7 +117,6 @@ func TestBuildArgvShellMode(t *testing.T) {
 		AgentName: "claude",
 		CWD:       "/p",
 		RunID:     "x",
-		SocketDir: "/tmp/safe-x",
 		ConfigDir: "/tmp/safe-cfg-x",
 		Shell:     true,
 	})
@@ -127,7 +134,6 @@ func TestBuildArgvBindsConfigDir(t *testing.T) {
 		AgentName: "claude",
 		CWD:       "/p",
 		RunID:     "x",
-		SocketDir: "/tmp/safe-x",
 		ConfigDir: "/tmp/safe-cfg-x",
 	})
 	require.NoError(t, err)
@@ -140,7 +146,6 @@ func TestBuildArgvRequiresConfigDir(t *testing.T) {
 		AgentName: "claude",
 		CWD:       "/p",
 		RunID:     "x",
-		SocketDir: "/tmp/safe-x",
 		// ConfigDir intentionally omitted
 	})
 	require.Error(t, err)
@@ -153,7 +158,6 @@ func TestBuildArgvIncludesRequiredCaps(t *testing.T) {
 		AgentName: "claude",
 		CWD:       "/p",
 		RunID:     "x",
-		SocketDir: "/tmp/safe-x",
 		ConfigDir: "/tmp/safe-cfg-x",
 	})
 	require.NoError(t, err)
@@ -172,7 +176,6 @@ func TestBuildArgvAppendsExtraCaps(t *testing.T) {
 		AgentName: "claude",
 		CWD:       "/p",
 		RunID:     "x",
-		SocketDir: "/tmp/safe-x",
 		ConfigDir: "/tmp/safe-cfg-x",
 	})
 	require.NoError(t, err)
@@ -187,7 +190,6 @@ func TestBuildArgvNoExtraCapsByDefault(t *testing.T) {
 		AgentName: "claude",
 		CWD:       "/p",
 		RunID:     "x",
-		SocketDir: "/tmp/safe-x",
 		ConfigDir: "/tmp/safe-cfg-x",
 	})
 	require.NoError(t, err)
@@ -203,7 +205,6 @@ func TestBuildArgvTmpfsForAuditLog(t *testing.T) {
 		AgentName: "claude",
 		CWD:       "/p",
 		RunID:     "x",
-		SocketDir: "/tmp/safe-x",
 		ConfigDir: "/tmp/safe-cfg-x",
 	})
 	require.NoError(t, err)

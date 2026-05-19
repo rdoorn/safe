@@ -6,7 +6,7 @@
 //  2. Run safe-fw once to seed nftables.
 //  3. Spawn safe-dns as user `firewall` (cap_net_admin via file caps).
 //  4. Spawn safe-keyholder as user `keyholder`, pipe the LLM API key
-//     from /run/safe/keyholder.sock into its stdin once.
+//     received over the one-shot TCP bootstrap port into its stdin once.
 //  5. Drop to user `agent`, set no_new_privs, exec the configured agent
 //     with the agent's args.
 //  6. Forward host signals to the agent and reap any zombies that
@@ -39,7 +39,7 @@ const (
 	defaultKeyholderUID = 201
 	defaultAgentUID     = 1000
 	defaultAgentGID     = 1000
-	keyholderSocket     = "/run/safe/keyholder.sock"
+	bootstrapPort       = "9099" // must match internal/dockerrun.BootstrapPort
 	configPath          = "/etc/safe/config.yaml"
 	safeFW              = "/usr/sbin/safe-fw"
 	safeDNS             = "/usr/sbin/safe-dns"
@@ -93,7 +93,7 @@ func run(agentName string, agentArgs []string) error {
 		return fmt.Errorf("determine auth mode: %w", err)
 	}
 
-	secret, err := readSecretFromSocket(keyholderSocket, keyPipeTimeout)
+	secret, err := readSecretFromTCP(bootstrapPort, keyPipeTimeout)
 	if err != nil {
 		return fmt.Errorf("read auth secret: %w", err)
 	}
@@ -175,23 +175,24 @@ func resolveAuthMode(agentName string) (string, error) {
 	}
 }
 
-// readSecretFromSocket waits up to timeout for the host to connect on
-// socketPath and write the auth secret (API key line or credentials JSON
-// blob). Reads until EOF so multi-line OAuth payloads work too.
-func readSecretFromSocket(socketPath string, timeout time.Duration) ([]byte, error) {
-	ln, err := net.Listen("unix", socketPath)
+// readSecretFromTCP waits up to timeout for the host to connect on the
+// in-container TCP port and write the auth secret (API key line or
+// credentials JSON blob). Reads until EOF so multi-line OAuth payloads
+// work too. The listener binds 0.0.0.0 because the docker-proxy reaches
+// us via the bridge interface, not loopback.
+func readSecretFromTCP(port string, timeout time.Duration) ([]byte, error) {
+	ln, err := net.Listen("tcp", "0.0.0.0:"+port)
 	if err != nil {
-		return nil, fmt.Errorf("listen %s: %w", socketPath, err)
+		return nil, fmt.Errorf("listen tcp 0.0.0.0:%s: %w", port, err)
 	}
 	defer func() { _ = ln.Close() }()
-	_ = os.Chmod(socketPath, 0o600)
 
-	if t, ok := ln.(*net.UnixListener); ok {
+	if t, ok := ln.(*net.TCPListener); ok {
 		_ = t.SetDeadline(time.Now().Add(timeout))
 	}
 	conn, err := ln.Accept()
 	if err != nil {
-		return nil, fmt.Errorf("accept on %s: %w", socketPath, err)
+		return nil, fmt.Errorf("accept on :%s: %w", port, err)
 	}
 	defer func() { _ = conn.Close() }()
 

@@ -15,7 +15,6 @@ type Inputs struct {
 	AgentArgs      []string
 	CWD            string
 	RunID          string
-	SocketDir      string
 	SeccompProfile string
 	HomeVolumeName string
 	TTY            bool
@@ -102,6 +101,7 @@ func BuildArgv(in Inputs) ([]string, error) {
 		"--memory", mem,
 		"--memory-swap", mem,
 		"--network", "bridge",
+		"-p", "127.0.0.1:0:"+BootstrapPort+"/tcp",
 		"--dns", "127.0.0.1",
 		"--env-file", "/dev/null",
 	)
@@ -117,7 +117,6 @@ func BuildArgv(in Inputs) ([]string, error) {
 	argv = append(argv,
 		"-v", in.CWD+":/workspace",
 		"-v", homeVolume+":/home/agent/.cache",
-		"-v", in.SocketDir+":/run/safe",
 		"-v", in.ConfigDir+":/etc/safe:ro",
 	)
 	argv = append(argv, in.MountFlags...)
