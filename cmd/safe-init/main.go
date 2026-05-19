@@ -130,6 +130,13 @@ func runSafeFW() error {
 // runs). Without this, the agent's stdin defaults to /dev/null and
 // TTY-detecting agents like claude exit immediately as if they were
 // being piped to.
+//
+// We deliberately do NOT set Setpgid here (unlike startUserProcess for
+// daemons). The container's controlling-TTY foreground process group is
+// safe-init's group (pgrp 1). If the agent were in its own process
+// group, any read of the TTY (tcgetattr, TIOCGWINSZ, stdin read) would
+// fault with SIGTTIN and the kernel would stop the agent (state T).
+// Inheriting pgrp 1 makes the agent the foreground group of the PTY.
 func startAgent(bin string, args []string, uid, gid uint32) (*exec.Cmd, error) {
 	cmd := exec.Command(bin, args...) //nolint:gosec // bin/args derived from validated config + PATH lookup
 	cmd.Stdin = os.Stdin
@@ -137,7 +144,6 @@ func startAgent(bin string, args []string, uid, gid uint32) (*exec.Cmd, error) {
 	cmd.Stderr = os.Stderr
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Credential: &syscall.Credential{Uid: uid, Gid: gid, NoSetGroups: true},
-		Setpgid:    true,
 	}
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start %s: %w", bin, err)
