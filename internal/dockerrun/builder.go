@@ -145,9 +145,14 @@ func BuildArgv(in Inputs) ([]string, error) {
 //     semantics make the keyholder URL win if the user happens to set
 //     the same key in agent.Env; the port matches
 //     cmd/safe-keyholder/main.go defaultListenAddr;
-//   - in API-key mode (agent.AuthEnv set), a dummy value on AuthEnv so
-//     the real key (held by keyholder) is the only way out. OAuth mode
-//     has no env-var-named API key to dummy out.
+//   - a dummy placeholder for the agent's auth env var. claude refuses
+//     to start in EITHER mode without a credential of some kind, even
+//     when ANTHROPIC_BASE_URL points at the keyholder. The placeholder
+//     env var name is agent.AuthEnv if set (API-key mode), otherwise
+//     "ANTHROPIC_API_KEY" (the canonical claude env var, used in OAuth
+//     mode where the real credential lives in keyholder's memory and
+//     never flows through this env var). The keyholder strips and
+//     replaces the Authorization header in flight regardless.
 func appendAgentEnv(argv []string, agent config.Agent) []string {
 	envKeys := make([]string, 0, len(agent.Env))
 	for k := range agent.Env {
@@ -164,8 +169,10 @@ func appendAgentEnv(argv []string, agent config.Agent) []string {
 	}
 	argv = append(argv, "-e", baseURLEnv+"=http://127.0.0.1:8443")
 
-	if agent.AuthEnv != "" {
-		argv = append(argv, "-e", agent.AuthEnv+"=dummy")
+	authEnv := agent.AuthEnv
+	if authEnv == "" {
+		authEnv = "ANTHROPIC_API_KEY"
 	}
+	argv = append(argv, "-e", authEnv+"=dummy")
 	return argv
 }

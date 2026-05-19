@@ -247,7 +247,7 @@ func TestBuildArgvSetsDummyAuthEnvInAPIKeyMode(t *testing.T) {
 	require.Contains(t, strings.Join(argv, " "), "-e ANTHROPIC_API_KEY=dummy")
 }
 
-func TestBuildArgvSkipsDummyAuthEnvInOAuthMode(t *testing.T) {
+func TestBuildArgvSetsDummyAuthEnvInOAuthMode(t *testing.T) {
 	cfg := minimalConfig()
 	a := cfg.Agents["claude"]
 	a.AuthEnv = ""
@@ -262,8 +262,8 @@ func TestBuildArgvSkipsDummyAuthEnvInOAuthMode(t *testing.T) {
 		ConfigDir: "/tmp/safe-cfg-x",
 	})
 	require.NoError(t, err)
-	require.NotContains(t, strings.Join(argv, " "), "=dummy",
-		"OAuth mode has no AuthEnv to dummy out")
+	require.Contains(t, strings.Join(argv, " "), "-e ANTHROPIC_API_KEY=dummy",
+		"OAuth mode still needs a dummy placeholder; claude refuses to start without an Anthropic credential of some kind")
 }
 
 func TestBuildArgvPassesAgentEnvBlock(t *testing.T) {
