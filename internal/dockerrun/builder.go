@@ -4,6 +4,7 @@ package dockerrun
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/rdoorn/safe/internal/config"
 )
@@ -125,6 +126,8 @@ func BuildArgv(in Inputs) ([]string, error) {
 		argv = append(argv, "-e", k)
 	}
 
+	argv = appendAgentEnv(argv, agent)
+
 	if in.Shell {
 		argv = append(argv, "--entrypoint", "/bin/bash", agent.Image)
 	} else {
@@ -133,4 +136,36 @@ func BuildArgv(in Inputs) ([]string, error) {
 	}
 
 	return argv, nil
+}
+
+// appendAgentEnv emits the per-agent env block:
+//   - agent.Env entries (sorted key order for deterministic argv);
+//   - the keyholder base URL on agent.BaseURLEnv (default
+//     ANTHROPIC_BASE_URL), emitted AFTER agent.Env so docker's last-wins
+//     semantics make the keyholder URL win if the user happens to set
+//     the same key in agent.Env; the port matches
+//     cmd/safe-keyholder/main.go defaultListenAddr;
+//   - in API-key mode (agent.AuthEnv set), a dummy value on AuthEnv so
+//     the real key (held by keyholder) is the only way out. OAuth mode
+//     has no env-var-named API key to dummy out.
+func appendAgentEnv(argv []string, agent config.Agent) []string {
+	envKeys := make([]string, 0, len(agent.Env))
+	for k := range agent.Env {
+		envKeys = append(envKeys, k)
+	}
+	sort.Strings(envKeys)
+	for _, k := range envKeys {
+		argv = append(argv, "-e", k+"="+agent.Env[k])
+	}
+
+	baseURLEnv := agent.BaseURLEnv
+	if baseURLEnv == "" {
+		baseURLEnv = "ANTHROPIC_BASE_URL"
+	}
+	argv = append(argv, "-e", baseURLEnv+"=http://127.0.0.1:8443")
+
+	if agent.AuthEnv != "" {
+		argv = append(argv, "-e", agent.AuthEnv+"=dummy")
+	}
+	return argv
 }

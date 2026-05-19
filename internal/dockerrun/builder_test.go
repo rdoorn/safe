@@ -199,6 +199,95 @@ func TestBuildArgvNoExtraCapsByDefault(t *testing.T) {
 	require.NotContains(t, joined, "--cap-add SYS_PTRACE")
 }
 
+func TestBuildArgvSetsBaseURLEnvDefault(t *testing.T) {
+	argv, err := dockerrun.BuildArgv(dockerrun.Inputs{
+		Config:    minimalConfig(),
+		AgentName: "claude",
+		CWD:       "/p",
+		RunID:     "x",
+		ConfigDir: "/tmp/safe-cfg-x",
+	})
+	require.NoError(t, err)
+	require.Contains(t, strings.Join(argv, " "), "-e ANTHROPIC_BASE_URL=http://127.0.0.1:8443")
+}
+
+func TestBuildArgvSetsBaseURLEnvCustomName(t *testing.T) {
+	cfg := minimalConfig()
+	a := cfg.Agents["claude"]
+	a.BaseURLEnv = "CUSTOM_BASE_URL_VAR"
+	cfg.Agents["claude"] = a
+
+	argv, err := dockerrun.BuildArgv(dockerrun.Inputs{
+		Config:    cfg,
+		AgentName: "claude",
+		CWD:       "/p",
+		RunID:     "x",
+		ConfigDir: "/tmp/safe-cfg-x",
+	})
+	require.NoError(t, err)
+	joined := strings.Join(argv, " ")
+	require.Contains(t, joined, "-e CUSTOM_BASE_URL_VAR=http://127.0.0.1:8443")
+	require.NotContains(t, joined, "-e ANTHROPIC_BASE_URL=", "default name must not also be emitted when custom is set")
+}
+
+func TestBuildArgvSetsDummyAuthEnvInAPIKeyMode(t *testing.T) {
+	cfg := minimalConfig()
+	a := cfg.Agents["claude"]
+	a.AuthEnv = "ANTHROPIC_API_KEY"
+	cfg.Agents["claude"] = a
+
+	argv, err := dockerrun.BuildArgv(dockerrun.Inputs{
+		Config:    cfg,
+		AgentName: "claude",
+		CWD:       "/p",
+		RunID:     "x",
+		ConfigDir: "/tmp/safe-cfg-x",
+	})
+	require.NoError(t, err)
+	require.Contains(t, strings.Join(argv, " "), "-e ANTHROPIC_API_KEY=dummy")
+}
+
+func TestBuildArgvSkipsDummyAuthEnvInOAuthMode(t *testing.T) {
+	cfg := minimalConfig()
+	a := cfg.Agents["claude"]
+	a.AuthEnv = ""
+	a.AuthCredentialsFile = "/some/path/credentials.json"
+	cfg.Agents["claude"] = a
+
+	argv, err := dockerrun.BuildArgv(dockerrun.Inputs{
+		Config:    cfg,
+		AgentName: "claude",
+		CWD:       "/p",
+		RunID:     "x",
+		ConfigDir: "/tmp/safe-cfg-x",
+	})
+	require.NoError(t, err)
+	require.NotContains(t, strings.Join(argv, " "), "=dummy",
+		"OAuth mode has no AuthEnv to dummy out")
+}
+
+func TestBuildArgvPassesAgentEnvBlock(t *testing.T) {
+	cfg := minimalConfig()
+	a := cfg.Agents["claude"]
+	a.Env = map[string]string{
+		"DISABLE_TELEMETRY":               "1",
+		"CLAUDE_CODE_DISABLE_AUTOUPDATER": "1",
+	}
+	cfg.Agents["claude"] = a
+
+	argv, err := dockerrun.BuildArgv(dockerrun.Inputs{
+		Config:    cfg,
+		AgentName: "claude",
+		CWD:       "/p",
+		RunID:     "x",
+		ConfigDir: "/tmp/safe-cfg-x",
+	})
+	require.NoError(t, err)
+	joined := strings.Join(argv, " ")
+	require.Contains(t, joined, "-e CLAUDE_CODE_DISABLE_AUTOUPDATER=1")
+	require.Contains(t, joined, "-e DISABLE_TELEMETRY=1")
+}
+
 func TestBuildArgvTmpfsForAuditLog(t *testing.T) {
 	argv, err := dockerrun.BuildArgv(dockerrun.Inputs{
 		Config:    minimalConfig(),
