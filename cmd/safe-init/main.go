@@ -245,14 +245,14 @@ func supervise(agent, dns, keyholder *exec.Cmd) error {
 	return err
 }
 
-// resolveAgentPath maps the agent name to its in-container binary.
-// For v1 the registry is closed: only known names work, anything else
-// is rejected before we get here by --doctor.
+// resolveAgentPath maps the agent name to its in-container binary path.
+// Looks up `name` on PATH so the image-build location is decoupled from
+// safe-init: claude is installed via `npm install -g` which lands at
+// /usr/local/bin/claude, other agents may be in /usr/bin or elsewhere.
+// PATH lookup keeps safe-init agnostic.
 func resolveAgentPath(name string) string {
-	switch name {
-	case "claude":
-		return "/usr/bin/claude"
-	default:
-		return "/usr/bin/" + name
+	if p, err := exec.LookPath(name); err == nil {
+		return p
 	}
+	return name
 }
