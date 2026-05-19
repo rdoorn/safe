@@ -108,8 +108,8 @@ func run(agentName string, agentArgs []string) error {
 	// Drop the agent under us. We do NOT use initd.DropPrivileges on
 	// ourselves because we still need root to reap zombies; instead the
 	// agent runs in its own credential via SysProcAttr.
-	agentCmd, err := startUserProcess(resolveAgentPath(agentName), agentArgs,
-		defaultAgentUID, defaultAgentGID, nil)
+	agentCmd, err := startAgent(resolveAgentPath(agentName), agentArgs,
+		defaultAgentUID, defaultAgentGID)
 	if err != nil {
 		return fmt.Errorf("start agent: %w", err)
 	}
@@ -124,9 +124,31 @@ func runSafeFW() error {
 	return cmd.Run()
 }
 
-// startUserProcess spawns argv as the given uid/gid, with optional stdin.
-// stdin (when non-nil) is written and closed before the function returns
-// so the child doesn't block on an open pipe.
+// startAgent spawns the foreground agent process as the given uid/gid,
+// inheriting safe-init's stdin/stdout/stderr so the agent shares the
+// docker-allocated TTY (interactive REPL) or pipes (non-interactive
+// runs). Without this, the agent's stdin defaults to /dev/null and
+// TTY-detecting agents like claude exit immediately as if they were
+// being piped to.
+func startAgent(bin string, args []string, uid, gid uint32) (*exec.Cmd, error) {
+	cmd := exec.Command(bin, args...) //nolint:gosec // bin/args derived from validated config + PATH lookup
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Credential: &syscall.Credential{Uid: uid, Gid: gid, NoSetGroups: true},
+		Setpgid:    true,
+	}
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("start %s: %w", bin, err)
+	}
+	return cmd, nil
+}
+
+// startUserProcess spawns a background daemon as the given uid/gid, with
+// optional stdin bytes (used to one-shot pipe the keyholder secret).
+// The child inherits stdout/stderr but NOT stdin (it gets /dev/null) —
+// daemons here are TCP listeners, none of them read keyboard input.
 func startUserProcess(bin string, args []string, uid, gid uint32, stdin []byte) (*exec.Cmd, error) {
 	cmd := exec.Command(bin, args...) //nolint:gosec // bin/args derived from constants and validated config
 	cmd.Stdout = os.Stdout
