@@ -67,53 +67,70 @@ func main() {
 	}
 }
 
+// keyholderEnabled gates the auth bootstrap + safe-keyholder spawn.
+// TEMP DEBUG (2026-05-19): disabled while we verify claude can render its
+// UI inside the SAFE sandbox at all. Flip back to true to restore the
+// keyholder-mediated auth flow. The matching switch on the host side is
+// `keyholderEnabled` in internal/dockerrun/builder.go.
+const keyholderEnabled = false
+
 func run(agentName string, agentArgs []string) error {
-	// hidepid=2 needs CAP_SYS_ADMIN; we don't grant it by default
-	// (NET_ADMIN is enough for everything else). Treat the remount as
-	// best-effort: without it, the agent uid can still see other users'
-	// PIDs (information disclosure only), but cannot read their environ,
-	// maps, or mem — those checks fire on uid regardless of hidepid.
+	logStage := func(stage int, msg string) {
+		fmt.Fprintf(os.Stderr, "safe-init: stage=%d %s\n", stage, msg)
+	}
+
+	logStage(1, "remount /proc hidepid=2 (best-effort)")
 	if err := initd.RemountProcHidepid(defaultFirewallGID); err != nil {
 		fmt.Fprintln(os.Stderr, "safe-init: hidepid remount skipped:", err)
 		fmt.Fprintln(os.Stderr, "safe-init: add --cap-add SYS_ADMIN to docker run to enable PID hiding")
 	}
 
+	logStage(2, "run safe-fw to seed nftables")
 	if err := runSafeFW(); err != nil {
 		return fmt.Errorf("safe-fw seed: %w", err)
 	}
 
+	logStage(3, "spawn safe-dns as uid 200")
 	dnsCmd, err := startUserProcess(safeDNS, []string{"--config", configPath},
 		defaultFirewallUID, defaultFirewallGID, nil)
 	if err != nil {
 		return fmt.Errorf("start safe-dns: %w", err)
 	}
 
-	authMode, err := resolveAuthMode(agentName)
-	if err != nil {
-		return fmt.Errorf("determine auth mode: %w", err)
-	}
+	var keyholderCmd *exec.Cmd
+	if keyholderEnabled {
+		logStage(4, "resolve auth mode + read bootstrap secret")
+		authMode, err := resolveAuthMode(agentName)
+		if err != nil {
+			return fmt.Errorf("determine auth mode: %w", err)
+		}
+		secret, err := readSecretFromTCP(bootstrapPort, keyPipeTimeout)
+		if err != nil {
+			return fmt.Errorf("read auth secret: %w", err)
+		}
 
-	secret, err := readSecretFromTCP(bootstrapPort, keyPipeTimeout)
-	if err != nil {
-		return fmt.Errorf("read auth secret: %w", err)
-	}
-
-	keyholderCmd, err := startUserProcess(safeKeyholder,
-		[]string{"--config", configPath, "--agent", agentName, "--mode", authMode},
-		defaultKeyholderUID, defaultKeyholderUID, secret)
-	if err != nil {
-		return fmt.Errorf("start safe-keyholder: %w", err)
+		logStage(5, "spawn safe-keyholder as uid 201")
+		keyholderCmd, err = startUserProcess(safeKeyholder,
+			[]string{"--config", configPath, "--agent", agentName, "--mode", authMode},
+			defaultKeyholderUID, defaultKeyholderUID, secret)
+		if err != nil {
+			return fmt.Errorf("start safe-keyholder: %w", err)
+		}
+	} else {
+		logStage(4, "SKIPPED keyholder bootstrap (TEMP DEBUG, keyholderEnabled=false)")
 	}
 
 	// Drop the agent under us. We do NOT use initd.DropPrivileges on
 	// ourselves because we still need root to reap zombies; instead the
 	// agent runs in its own credential via SysProcAttr.
-	agentCmd, err := startAgent(resolveAgentPath(agentName), agentArgs,
-		defaultAgentUID, defaultAgentGID)
+	agentBin := resolveAgentPath(agentName)
+	logStage(6, fmt.Sprintf("spawn agent: bin=%s args=%v uid=%d", agentBin, agentArgs, defaultAgentUID))
+	agentCmd, err := startAgent(agentBin, agentArgs, defaultAgentUID, defaultAgentGID)
 	if err != nil {
 		return fmt.Errorf("start agent: %w", err)
 	}
 
+	logStage(7, fmt.Sprintf("supervise (agent pid=%d, waiting for exit)", agentCmd.Process.Pid))
 	return supervise(agentCmd, dnsCmd, keyholderCmd)
 }
 

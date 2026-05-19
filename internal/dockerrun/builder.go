@@ -102,10 +102,12 @@ func BuildArgv(in Inputs) ([]string, error) {
 		"--memory", mem,
 		"--memory-swap", mem,
 		"--network", "bridge",
-		"-p", "127.0.0.1:0:"+BootstrapPort+"/tcp",
 		"--dns", "127.0.0.1",
 		"--env-file", "/dev/null",
 	)
+	if KeyholderEnabled {
+		argv = append(argv, "-p", "127.0.0.1:0:"+BootstrapPort+"/tcp")
+	}
 	if in.TTY {
 		argv = append(argv, "-it")
 	} else {
@@ -126,7 +128,15 @@ func BuildArgv(in Inputs) ([]string, error) {
 		argv = append(argv, "-e", k)
 	}
 
-	argv = appendAgentEnv(argv, agent)
+	if KeyholderEnabled {
+		argv = appendAgentEnv(argv, agent)
+	} else {
+		// TEMP DEBUG: keyholder disabled. Still emit agent.Env (DISABLE_TELEMETRY,
+		// CLAUDE_CODE_DISABLE_AUTOUPDATER, etc.) but skip the BASE_URL + dummy
+		// AUTH overrides so claude uses its image defaults (api.anthropic.com
+		// + whatever credentials it can find).
+		argv = appendAgentEnvOnly(argv, agent)
+	}
 
 	if in.Shell {
 		argv = append(argv, "--entrypoint", "/bin/bash", agent.Image)
@@ -174,5 +184,22 @@ func appendAgentEnv(argv []string, agent config.Agent) []string {
 		authEnv = "ANTHROPIC_API_KEY"
 	}
 	argv = append(argv, "-e", authEnv+"=dummy")
+	return argv
+}
+
+// appendAgentEnvOnly emits ONLY agent.Env (sorted keys). Used while the
+// keyholder bootstrap is disabled (see KeyholderEnabled in constants.go):
+// the agent talks to upstream directly with whatever credentials its
+// image happens to find. Bring this back into appendAgentEnv once
+// keyholder is re-enabled.
+func appendAgentEnvOnly(argv []string, agent config.Agent) []string {
+	envKeys := make([]string, 0, len(agent.Env))
+	for k := range agent.Env {
+		envKeys = append(envKeys, k)
+	}
+	sort.Strings(envKeys)
+	for _, k := range envKeys {
+		argv = append(argv, "-e", k+"="+agent.Env[k])
+	}
 	return argv
 }

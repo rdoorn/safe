@@ -27,23 +27,36 @@ const (
 // runAgent is the path executed when the user runs `safe <agent> [args...]`.
 // It loads/validates config, prepares the per-run state, and execs docker.
 func runAgent(ctx context.Context, stdout, stderr io.Writer, xdgConfigDir, cwd, agentName string, agentArgs []string, shell bool) error {
+	logStage := func(stage int, msg string) {
+		_, _ = fmt.Fprintf(stderr, "safe: stage=%d %s\n", stage, msg)
+	}
+
+	logStage(1, "load+validate config")
 	merged, agent, err := loadAgent(xdgConfigDir, cwd, agentName)
 	if err != nil {
 		return err
 	}
 
-	secret, err := resolveAuthSecret(agent, shell)
-	if err != nil {
-		return err
+	var secret []byte
+	if dockerrun.KeyholderEnabled {
+		logStage(2, "resolve auth secret from "+authSecretSource(agent))
+		secret, err = resolveAuthSecret(agent, shell)
+		if err != nil {
+			return err
+		}
+	} else {
+		logStage(2, "SKIPPED auth secret resolution (TEMP DEBUG, KeyholderEnabled=false)")
 	}
 
 	runID := newRunID()
 	runRoot := filepath.Join(cwd, ".safe", runID)
+	logStage(3, "create run dir "+runRoot)
 	if err := os.MkdirAll(runRoot, 0o755); err != nil { //nolint:gosec // 0o755 is intentional; container uids must traverse
 		return fmt.Errorf("create run dir %s: %w", runRoot, err)
 	}
 	defer func() { _ = os.RemoveAll(runRoot) }()
 
+	logStage(4, "serialize merged config + write into run dir")
 	configYAML, err := yaml.Marshal(merged)
 	if err != nil {
 		return fmt.Errorf("marshal merged config: %w", err)
@@ -56,11 +69,13 @@ func runAgent(ctx context.Context, stdout, stderr io.Writer, xdgConfigDir, cwd, 
 		return err
 	}
 
+	logStage(5, "build docker argv")
 	argv, err := buildDockerArgv(merged, agent, agentName, agentArgs, cwd, runID, configDir, shell)
 	if err != nil {
 		return err
 	}
 
+	logStage(6, fmt.Sprintf("docker run safe-%s (image=%s)", runID, agent.Image))
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...) //nolint:gosec // argv constructed from validated config
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = stdout
@@ -69,12 +84,25 @@ func runAgent(ctx context.Context, stdout, stderr io.Writer, xdgConfigDir, cwd, 
 		return fmt.Errorf("start docker: %w", err)
 	}
 
-	if !shell && len(secret) > 0 {
+	if dockerrun.KeyholderEnabled && !shell && len(secret) > 0 {
+		logStage(7, "pipeAuthSecret goroutine -> container")
 		go pipeAuthSecret(ctx, stderr, "safe-"+runID, secret)
 	}
 	go forwardSignalsToDocker(cmd)
 
+	logStage(8, "wait for docker to exit")
 	return waitDocker(cmd)
+}
+
+// authSecretSource returns a short label for stage logs.
+func authSecretSource(a config.Agent) string {
+	if a.AuthCredentialsFile != "" {
+		return "credentials file " + a.AuthCredentialsFile
+	}
+	if a.AuthEnv != "" {
+		return "env var " + a.AuthEnv
+	}
+	return "<none>"
 }
 
 func loadAgent(xdgConfigDir, cwd, agentName string) (*config.Config, config.Agent, error) {
