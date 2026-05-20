@@ -179,11 +179,16 @@ func appendAgentEnv(argv []string, agent config.Agent) []string {
 	}
 	argv = append(argv, "-e", baseURLEnv+"=http://127.0.0.1:8443")
 
-	authEnv := agent.AuthEnv
-	if authEnv == "" {
-		authEnv = "ANTHROPIC_API_KEY"
+	// Skip the dummy placeholder when the credentials file is mounted:
+	// claude finds real OAuth credentials on disk and doesn't prompt
+	// "Detected a custom API key in your environment".
+	if agent.AuthCredentialsFile == "" || !agent.Customization.Credentials {
+		authEnv := agent.AuthEnv
+		if authEnv == "" {
+			authEnv = "ANTHROPIC_API_KEY"
+		}
+		argv = append(argv, "-e", authEnv+"=dummy")
 	}
-	argv = append(argv, "-e", authEnv+"=dummy")
 	return argv
 }
 

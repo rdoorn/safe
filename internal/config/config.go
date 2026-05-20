@@ -56,6 +56,13 @@ type Customization struct {
 	Statusline bool `yaml:"statusline"`
 	Hooks      bool `yaml:"hooks"`
 	Plugins    bool `yaml:"plugins"`
+	// Credentials: when true AND the agent is in OAuth mode
+	// (auth_credentials_file is set), the credentials file is
+	// bind-mounted read-only at /home/agent/.claude/.credentials.json so
+	// the agent uses its OAuth token directly. SECURITY trade-off: the
+	// agent uid can read this file. Use only when you trust the agent
+	// with your refresh token. See docs/SECURITY.md.
+	Credentials bool `yaml:"credentials"`
 }
 
 // Resources is the Docker resource budget.

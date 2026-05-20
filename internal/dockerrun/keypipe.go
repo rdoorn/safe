@@ -22,7 +22,9 @@ import (
 // printed the mapping but the in-container listener isn't quite ready.
 func PipeKey(ctx context.Context, containerName, secret string) error {
 	log := func(msg string) {
-		_, _ = fmt.Fprintf(os.Stderr, "pipekey: %s\n", msg)
+		// \r\n because by the time this runs, docker has put the host
+		// terminal into raw mode so \n alone wouldn't carriage-return.
+		_, _ = fmt.Fprintf(os.Stderr, "pipekey: %s\r\n", msg)
 	}
 	log("start container=" + containerName)
 	deadline, hasDeadline := ctx.Deadline()
@@ -92,12 +94,12 @@ func discoverHostPort(ctx context.Context, containerName string, deadline time.T
 		if err == nil {
 			addr := strings.TrimSpace(string(out))
 			if addr != "" {
-				_, _ = fmt.Fprintf(os.Stderr, "pipekey: docker port returned after %d tries: %q\n", tries, addr)
+				_, _ = fmt.Fprintf(os.Stderr, "pipekey: docker port returned after %d tries: %q\r\n", tries, addr)
 				// `docker port` returns "127.0.0.1:54321" (possibly multiple lines for v4/v6).
 				return strings.SplitN(addr, "\n", 2)[0], nil
 			}
 		} else if tries == 1 || tries%20 == 0 {
-			_, _ = fmt.Fprintf(os.Stderr, "pipekey: docker port try %d err=%v\n", tries, err)
+			_, _ = fmt.Fprintf(os.Stderr, "pipekey: docker port try %d err=%v\r\n", tries, err)
 		}
 		time.Sleep(100 * time.Millisecond)
 	}

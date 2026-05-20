@@ -78,6 +78,12 @@ agents:
       # statusline: false # default; executable runs as agent uid
       # hooks: false      # default; scripts run as agent uid
       # plugins: false    # default
+      # credentials: false # OAuth ONLY: bind-mount ~/.claude/.credentials.json
+      #                    read-only so claude reads the OAuth token directly
+      #                    and SAFE skips emitting the dummy ANTHROPIC_API_KEY
+      #                    env (which would otherwise trigger claude's
+      #                    "Detected a custom API key" prompt). Default false:
+      #                    agent uid CAN read this file when enabled.
 
 # FQDNs the agent is allowed to reach. Anything else returns NXDOMAIN.
 # Edit this list for your project's API endpoints.

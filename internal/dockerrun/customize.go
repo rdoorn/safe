@@ -25,6 +25,7 @@ var claudeMounts = []claudeMount{
 	{srcRel: "statusline.sh", dstAbs: "/home/agent/.claude/statusline.sh", wantDir: false},
 	{srcRel: "hooks", dstAbs: "/home/agent/.claude/hooks", wantDir: true},
 	{srcRel: "plugins", dstAbs: "/home/agent/.claude/plugins", wantDir: true},
+	{srcRel: ".credentials.json", dstAbs: "/home/agent/.claude/.credentials.json", wantDir: false},
 }
 
 // gateFor returns the boolean field of c that gates the named mount.
@@ -44,6 +45,8 @@ func gateFor(c config.Customization, m claudeMount) bool {
 		return c.Hooks
 	case "plugins":
 		return c.Plugins
+	case ".credentials.json":
+		return c.Credentials
 	default:
 		return false
 	}
