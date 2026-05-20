@@ -7,8 +7,6 @@ const BootstrapPort = "9099"
 
 // KeyholderEnabled gates the auth bootstrap on the host side
 // (port publish + agent env overrides + pipeAuthSecret goroutine).
-// TEMP DEBUG (2026-05-19): disabled while verifying claude can render
-// its UI inside the SAFE sandbox. The matching switch on the container
-// side is `keyholderEnabled` in cmd/safe-init/main.go; the two MUST be
-// kept in lockstep.
-const KeyholderEnabled = false
+// The matching switch on the container side is `keyholderEnabled` in
+// cmd/safe-init/main.go; the two MUST be kept in lockstep.
+const KeyholderEnabled = true

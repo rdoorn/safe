@@ -69,11 +69,9 @@ func main() {
 }
 
 // keyholderEnabled gates the auth bootstrap + safe-keyholder spawn.
-// TEMP DEBUG (2026-05-19): disabled while we verify claude can render its
-// UI inside the SAFE sandbox at all. Flip back to true to restore the
-// keyholder-mediated auth flow. The matching switch on the host side is
-// `keyholderEnabled` in internal/dockerrun/builder.go.
-const keyholderEnabled = false
+// The matching switch on the host side is `KeyholderEnabled` in
+// internal/dockerrun/constants.go; the two MUST be kept in lockstep.
+const keyholderEnabled = true
 
 func run(agentName string, agentArgs []string) error {
 	logStage := func(stage int, msg string) {
