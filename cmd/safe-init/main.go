@@ -26,6 +26,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"runtime"
+	"strings"
 	"syscall"
 	"time"
 
@@ -154,11 +155,17 @@ func runSafeFW() error {
 // group, any read of the TTY (tcgetattr, TIOCGWINSZ, stdin read) would
 // fault with SIGTTIN and the kernel would stop the agent (state T).
 // Inheriting pgrp 1 makes the agent the foreground group of the PTY.
+//
+// We also override HOME/USER/LOGNAME because syscall.Credential only
+// sets the uid/gid — the env is inherited from safe-init (root), so
+// without this the child sees HOME=/root and tries to read/write its
+// config under /root (which is on the read-only rootfs).
 func startAgent(bin string, args []string, uid, gid uint32) (*exec.Cmd, error) {
 	cmd := exec.Command(bin, args...) //nolint:gosec // bin/args derived from validated config + PATH lookup
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	cmd.Env = agentEnv(os.Environ())
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Credential: &syscall.Credential{Uid: uid, Gid: gid, NoSetGroups: true},
 	}
@@ -166,6 +173,27 @@ func startAgent(bin string, args []string, uid, gid uint32) (*exec.Cmd, error) {
 		return nil, fmt.Errorf("start %s: %w", bin, err)
 	}
 	return cmd, nil
+}
+
+// agentEnv returns parent's env with HOME/USER/LOGNAME replaced to
+// point at the agent uid's home/account inside the image.
+func agentEnv(parent []string) []string {
+	filtered := parent[:0:0]
+	for _, e := range parent {
+		switch {
+		case strings.HasPrefix(e, "HOME="),
+			strings.HasPrefix(e, "USER="),
+			strings.HasPrefix(e, "LOGNAME="):
+			continue
+		default:
+			filtered = append(filtered, e)
+		}
+	}
+	return append(filtered,
+		"HOME=/home/agent",
+		"USER=agent",
+		"LOGNAME=agent",
+	)
 }
 
 // startUserProcess spawns a background daemon as the given uid/gid, with
