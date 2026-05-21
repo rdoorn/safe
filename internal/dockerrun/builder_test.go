@@ -259,10 +259,7 @@ func TestBuildArgvSetsDummyAuthEnvInAPIKeyMode(t *testing.T) {
 	require.Contains(t, strings.Join(argv, " "), "-e ANTHROPIC_API_KEY=dummy")
 }
 
-func TestBuildArgvSetsDummyAuthEnvInOAuthMode(t *testing.T) {
-	if !dockerrun.KeyholderEnabled {
-		t.Skip("KeyholderEnabled=false (TEMP DEBUG)")
-	}
+func TestBuildArgvOAuthModeSkipsKeyholderEntirely(t *testing.T) {
 	cfg := minimalConfig()
 	a := cfg.Agents["claude"]
 	a.AuthEnv = ""
@@ -277,8 +274,13 @@ func TestBuildArgvSetsDummyAuthEnvInOAuthMode(t *testing.T) {
 		ConfigDir: "/tmp/safe-cfg-x",
 	})
 	require.NoError(t, err)
-	require.Contains(t, strings.Join(argv, " "), "-e ANTHROPIC_API_KEY=dummy",
-		"OAuth mode still needs a dummy placeholder; claude refuses to start without an Anthropic credential of some kind")
+	joined := strings.Join(argv, " ")
+	require.NotContains(t, joined, "-p 127.0.0.1:0:9099/tcp",
+		"OAuth mode skips keyholder; no bootstrap port should be published")
+	require.NotContains(t, joined, "-e ANTHROPIC_BASE_URL=",
+		"OAuth mode skips keyholder; no base URL override")
+	require.NotContains(t, joined, "=dummy",
+		"OAuth mode skips keyholder; no dummy auth env")
 }
 
 func TestBuildArgvPassesAgentEnvBlock(t *testing.T) {

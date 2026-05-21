@@ -84,26 +84,28 @@ func run(agentName string, agentArgs []string) error {
 		fmt.Fprintln(os.Stderr, "safe-init: add --cap-add SYS_ADMIN to docker run to enable PID hiding")
 	}
 
-	// Bootstrap secret must come BEFORE safe-fw / safe-dns so the
-	// in-container listener is up by the time docker reports the port
-	// mapping to the host. Otherwise host's PipeKey wins the race against
-	// the listener; docker-proxy eagerly accepts the host-side connection
-	// and drops the bytes silently when the container side isn't ready.
+	// Keyholder is only used in API-key mode. In OAuth mode the agent
+	// does its own /login in-container and keeps the access token in
+	// process memory. We must determine the auth mode BEFORE deciding to
+	// listen on the bootstrap port — and the bootstrap (if any) must
+	// come before safe-fw/safe-dns so the listener is up by the time
+	// the host's docker port mapping is reported (otherwise docker-proxy
+	// eagerly accepts and drops the host-side bytes silently).
+	authMode, err := resolveAuthMode(agentName)
+	if err != nil {
+		return fmt.Errorf("determine auth mode: %w", err)
+	}
+	useKeyholder := keyholderEnabled && authMode == "apikey"
+
 	var secret []byte
-	var authMode string
-	if keyholderEnabled {
+	if useKeyholder {
 		logStage(2, "read bootstrap secret (listener first; firewall comes after)")
-		var err error
-		authMode, err = resolveAuthMode(agentName)
-		if err != nil {
-			return fmt.Errorf("determine auth mode: %w", err)
-		}
 		secret, err = readSecretFromTCP(bootstrapPort, keyPipeTimeout)
 		if err != nil {
 			return fmt.Errorf("read auth secret: %w", err)
 		}
 	} else {
-		logStage(2, "SKIPPED bootstrap secret read (TEMP DEBUG, keyholderEnabled=false)")
+		logStage(2, fmt.Sprintf("SKIPPED bootstrap (mode=%s, useKeyholder=%v)", authMode, useKeyholder))
 	}
 
 	logStage(3, "run safe-fw to seed nftables")
@@ -119,7 +121,7 @@ func run(agentName string, agentArgs []string) error {
 	}
 
 	var keyholderCmd *exec.Cmd
-	if keyholderEnabled {
+	if useKeyholder {
 		logStage(5, "spawn safe-keyholder as uid 201")
 		keyholderCmd, err = startUserProcess(safeKeyholder,
 			[]string{"--config", configPath, "--agent", agentName, "--mode", authMode},
@@ -128,7 +130,7 @@ func run(agentName string, agentArgs []string) error {
 			return fmt.Errorf("start safe-keyholder: %w", err)
 		}
 	} else {
-		logStage(5, "SKIPPED safe-keyholder spawn (TEMP DEBUG)")
+		logStage(5, fmt.Sprintf("SKIPPED safe-keyholder (mode=%s)", authMode))
 	}
 
 	// Drop the agent under us. We do NOT use initd.DropPrivileges on
