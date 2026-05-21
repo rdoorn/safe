@@ -168,6 +168,18 @@ func stageClaudeState(configDir string) error {
 
 	state["bypassPermissionsModeAccepted"] = true
 
+	// Override install-related metadata. The host's claude is typically
+	// a "native" install at ~/.local/bin/claude. Inside the container
+	// claude was installed via `npm install -g`, which claude classifies
+	// as "global". Leaving the host's "native" value would make
+	// in-container claude check for ~/.local/bin/claude (doesn't exist
+	// in container) and emit "Native installation exists but
+	// ~/.local/bin is not in your PATH".
+	state["installMethod"] = "global"
+	delete(state, "autoUpdatesProtectedForNative")
+	delete(state, "installMethodMigratedAt")
+	state["autoUpdates"] = false // SAFE controls the runtime image; no in-container updates
+
 	projects, _ := state["projects"].(map[string]any)
 	if projects == nil {
 		projects = map[string]any{}
