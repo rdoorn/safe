@@ -104,28 +104,24 @@ func run(agentName string, agentArgs []string) error {
 		fmt.Fprintln(os.Stderr, "safe-init: stage claude-state.json skipped:", err)
 	}
 
-	// Keyholder is only used in API-key mode. In OAuth mode the agent
-	// does its own /login in-container and keeps the access token in
-	// process memory. We must determine the auth mode BEFORE deciding to
-	// listen on the bootstrap port — and the bootstrap (if any) must
-	// come before safe-fw/safe-dns so the listener is up by the time
-	// the host's docker port mapping is reported (otherwise docker-proxy
-	// eagerly accepts and drops the host-side bytes silently).
+	// Bootstrap secret must come BEFORE safe-fw/safe-dns so the
+	// in-container listener is up by the time docker reports the port
+	// mapping to the host (otherwise docker-proxy eagerly accepts and
+	// drops the host-side bytes silently).
 	authMode, err := resolveAuthMode(agentName)
 	if err != nil {
 		return fmt.Errorf("determine auth mode: %w", err)
 	}
-	useKeyholder := keyholderEnabled && authMode == "apikey"
 
 	var secret []byte
-	if useKeyholder {
-		logStage(2, "read bootstrap secret (listener first; firewall comes after)")
+	if keyholderEnabled {
+		logStage(2, fmt.Sprintf("read bootstrap secret (mode=%s, listener first)", authMode))
 		secret, err = readSecretFromTCP(bootstrapPort, keyPipeTimeout)
 		if err != nil {
 			return fmt.Errorf("read auth secret: %w", err)
 		}
 	} else {
-		logStage(2, fmt.Sprintf("SKIPPED bootstrap (mode=%s, useKeyholder=%v)", authMode, useKeyholder))
+		logStage(2, "SKIPPED bootstrap (keyholderEnabled=false)")
 	}
 
 	logStage(3, "run safe-fw to seed nftables")
@@ -141,7 +137,7 @@ func run(agentName string, agentArgs []string) error {
 	}
 
 	var keyholderCmd *exec.Cmd
-	if useKeyholder {
+	if keyholderEnabled {
 		logStage(5, "spawn safe-keyholder as uid 201")
 		keyholderCmd, err = startUserProcess(safeKeyholder,
 			[]string{"--config", configPath, "--agent", agentName, "--mode", authMode},

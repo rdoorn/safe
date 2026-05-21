@@ -37,10 +37,7 @@ func runAgent(ctx context.Context, stdout, stderr io.Writer, xdgConfigDir, cwd, 
 		return err
 	}
 
-	// Keyholder only applies in API-key mode. OAuth mode = agent does
-	// its own in-container /login; the host never reads or pipes the
-	// credentials file. See internal/dockerrun.isOAuthMode().
-	useKeyholder := dockerrun.KeyholderEnabled && agent.AuthCredentialsFile == ""
+	useKeyholder := dockerrun.KeyholderEnabled
 	var secret []byte
 	if useKeyholder {
 		logStage(2, "resolve auth secret from "+authSecretSource(agent))
@@ -49,7 +46,7 @@ func runAgent(ctx context.Context, stdout, stderr io.Writer, xdgConfigDir, cwd, 
 			return err
 		}
 	} else {
-		logStage(2, "SKIPPED keyholder bootstrap (OAuth mode or KeyholderEnabled=false)")
+		logStage(2, "SKIPPED keyholder bootstrap (KeyholderEnabled=false)")
 	}
 
 	runID := newRunID()

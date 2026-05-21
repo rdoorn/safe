@@ -259,7 +259,10 @@ func TestBuildArgvSetsDummyAuthEnvInAPIKeyMode(t *testing.T) {
 	require.Contains(t, strings.Join(argv, " "), "-e ANTHROPIC_API_KEY=dummy")
 }
 
-func TestBuildArgvOAuthModeSkipsKeyholderEntirely(t *testing.T) {
+func TestBuildArgvOAuthModeRoutesThroughKeyholder(t *testing.T) {
+	if !dockerrun.KeyholderEnabled {
+		t.Skip("KeyholderEnabled=false (TEMP DEBUG)")
+	}
 	cfg := minimalConfig()
 	a := cfg.Agents["claude"]
 	a.AuthEnv = ""
@@ -275,12 +278,14 @@ func TestBuildArgvOAuthModeSkipsKeyholderEntirely(t *testing.T) {
 	})
 	require.NoError(t, err)
 	joined := strings.Join(argv, " ")
-	require.NotContains(t, joined, "-p 127.0.0.1:0:9099/tcp",
-		"OAuth mode skips keyholder; no bootstrap port should be published")
-	require.NotContains(t, joined, "-e ANTHROPIC_BASE_URL=",
-		"OAuth mode skips keyholder; no base URL override")
-	require.NotContains(t, joined, "=dummy",
-		"OAuth mode skips keyholder; no dummy auth env")
+	require.Contains(t, joined, "-p 127.0.0.1:0:9099/tcp",
+		"OAuth mode also uses keyholder; bootstrap port must be published")
+	require.Contains(t, joined, "-e ANTHROPIC_BASE_URL=http://127.0.0.1:8443",
+		"OAuth mode points claude at keyholder")
+	require.Contains(t, joined, "-e ANTHROPIC_AUTH_TOKEN=dummy",
+		"OAuth mode uses ANTHROPIC_AUTH_TOKEN (Bearer source) not ANTHROPIC_API_KEY (would trigger claude prompt)")
+	require.NotContains(t, joined, "-e ANTHROPIC_API_KEY=",
+		"OAuth mode must NOT set ANTHROPIC_API_KEY; that triggers the 'Detected a custom API key' prompt")
 }
 
 func TestBuildArgvPassesAgentEnvBlock(t *testing.T) {

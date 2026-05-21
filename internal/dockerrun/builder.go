@@ -116,12 +116,12 @@ func BuildArgv(in Inputs) ([]string, error) { //nolint:gocyclo // unavoidable br
 		"--dns", "127.0.0.1",
 		"--env-file", "/dev/null",
 	)
-	// Keyholder is only useful for API-key mode (where the agent never
-	// gets to see the real key). In OAuth mode the agent does its own
-	// login in-container and keeps the access token in memory; we skip
-	// keyholder entirely so claude's fresh tokens aren't overwritten by
-	// keyholder's bootstrap-snapshotted ones.
-	useKeyholder := KeyholderEnabled && !isOAuthMode(agent)
+	// Keyholder is used in both auth modes. In API-key mode it holds the
+	// static key in process memory; in OAuth mode it holds the access +
+	// refresh tokens and refreshes them as they expire. Either way the
+	// agent uid never sees the real credential — every request flows
+	// through keyholder's proxy on 127.0.0.1:8443.
+	useKeyholder := KeyholderEnabled
 	if useKeyholder {
 		argv = append(argv, "-p", "127.0.0.1:0:"+BootstrapPort+"/tcp")
 	}
@@ -200,13 +200,20 @@ func appendAgentEnv(argv []string, agent config.Agent) []string {
 	}
 	argv = append(argv, "-e", baseURLEnv+"=http://127.0.0.1:8443")
 
-	// appendAgentEnv is only called when keyholder is in the request
-	// path (API-key mode). Always emit the dummy placeholder — claude
-	// needs SOMETHING in ANTHROPIC_API_KEY to make the call; keyholder
-	// strips it and substitutes the real key in flight.
+	// Pick which env var carries the dummy auth placeholder. claude
+	// needs SOMETHING in this var to make the call; keyholder strips
+	// and substitutes the real credential in flight.
+	//
+	//   API-key mode (agent.AuthEnv set):
+	//     use the configured env var name (e.g. ANTHROPIC_API_KEY).
+	//   OAuth mode (agent.AuthCredentialsFile set):
+	//     use ANTHROPIC_AUTH_TOKEN (a Bearer-token source). NOT
+	//     ANTHROPIC_API_KEY — claude prompts "Detected a custom API
+	//     key in your environment" on ANTHROPIC_API_KEY but treats
+	//     ANTHROPIC_AUTH_TOKEN as a trusted OAuth Bearer source.
 	authEnv := agent.AuthEnv
 	if authEnv == "" {
-		authEnv = "ANTHROPIC_API_KEY"
+		authEnv = "ANTHROPIC_AUTH_TOKEN"
 	}
 	argv = append(argv, "-e", authEnv+"=dummy")
 	return argv
@@ -227,14 +234,4 @@ func appendAgentEnvOnly(argv []string, agent config.Agent) []string {
 		argv = append(argv, "-e", k+"="+agent.Env[k])
 	}
 	return argv
-}
-
-// isOAuthMode reports whether the agent is configured for OAuth (the
-// host trusts a credentials file). In OAuth mode SAFE skips keyholder
-// routing — claude does its own /login in-container and the access
-// token lives in claude's process memory only. The trade-off is that
-// each `safe claude` session needs a fresh login (no persistence
-// across runs), but the host's credentials never enter the container.
-func isOAuthMode(agent config.Agent) bool {
-	return agent.AuthCredentialsFile != ""
 }
