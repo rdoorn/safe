@@ -77,6 +77,12 @@ func BuildArgv(in Inputs) ([]string, error) { //nolint:gocyclo // unavoidable br
 		"--cap-add", "SETUID",
 		"--cap-add", "SETGID",
 		"--cap-add", "KILL",
+		// CHOWN: safe-init uses this once at startup to chown
+		// /home/agent/.claude (auto-created by docker as root when
+		// resolving bind-mount parent paths) over to uid 1000. Without
+		// this, claude can't write its own state/credentials into its
+		// own home dir.
+		"--cap-add", "CHOWN",
 	}
 	// Opt-in extras from config. Validated against allowedExtraCaps at
 	// load time, so anything reaching here is one of SYS_ADMIN, SYS_PTRACE,

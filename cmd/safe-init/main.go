@@ -45,6 +45,7 @@ const (
 	safeFW              = "/usr/sbin/safe-fw"
 	safeDNS             = "/usr/sbin/safe-dns"
 	safeKeyholder       = "/usr/sbin/safe-keyholder"
+	agentClaudeDir      = "/home/agent/.claude"
 	keyPipeTimeout      = 10 * time.Second
 )
 
@@ -82,6 +83,17 @@ func run(agentName string, agentArgs []string) error {
 	if err := initd.RemountProcHidepid(defaultFirewallGID); err != nil {
 		fmt.Fprintln(os.Stderr, "safe-init: hidepid remount skipped:", err)
 		fmt.Fprintln(os.Stderr, "safe-init: add --cap-add SYS_ADMIN to docker run to enable PID hiding")
+	}
+
+	// Docker auto-creates /home/agent/.claude as root:root mode 755 when
+	// it resolves the bind-mount parent path for the customization mounts
+	// (skills, commands, CLAUDE.md, ...). The agent uid (1000) then can't
+	// write its own .credentials.json or session state into its own home.
+	// Chown the dir over to agent before the agent runs. The agent ownership
+	// of /home/agent itself is set by the docker --tmpfs uid=1000,gid=1000
+	// option in BuildArgv; only the subdir needs fixing here.
+	if err := os.Chown(agentClaudeDir, int(defaultAgentUID), int(defaultAgentGID)); err != nil && !os.IsNotExist(err) {
+		fmt.Fprintln(os.Stderr, "safe-init: chown", agentClaudeDir, "skipped:", err)
 	}
 
 	// Keyholder is only used in API-key mode. In OAuth mode the agent
