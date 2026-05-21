@@ -152,6 +152,14 @@ func run(agentName string, agentArgs []string) error {
 		logStage(5, fmt.Sprintf("SKIPPED safe-keyholder (mode=%s)", authMode))
 	}
 
+	// Tighten the bounding set BEFORE spawning the agent so anything the
+	// agent execs can never gain these caps via file caps or setuid bits.
+	// safe-dns / safe-keyholder are already running and unaffected. See
+	// hardenAgentSubtree() doc for details.
+	if err := hardenAgentSubtree(); err != nil {
+		fmt.Fprintln(os.Stderr, "safe-init: agent-subtree hardening skipped:", err)
+	}
+
 	// Drop the agent under us. We do NOT use initd.DropPrivileges on
 	// ourselves because we still need root to reap zombies; instead the
 	// agent runs in its own credential via SysProcAttr.

@@ -92,6 +92,14 @@ RUN chgrp firewall /usr/sbin/safe-dns \
  && chmod 0750 /usr/sbin/safe-dns \
  && setcap cap_net_admin+ep /usr/sbin/safe-dns
 
+# --- Lock down nft to firewall group only ---
+# nft is shipped because safe-fw/safe-dns use it. The agent uid has no
+# CAP_NET_ADMIN so any nft invocation from the agent would be inert
+# anyway, but removing it from PATH for the agent is cheap attack-surface
+# reduction. Same root:firewall 0750 pattern as safe-dns.
+RUN chgrp firewall /usr/sbin/nft \
+ && chmod 0750 /usr/sbin/nft
+
 # --- Directories ---
 RUN mkdir -p /etc/safe /var/log/safe /run/safe /workspace \
  && chown firewall:firewall /var/log/safe \
