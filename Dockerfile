@@ -1,12 +1,16 @@
-# syntax=docker/dockerfile:1.7
 # SAFE runtime image. Built with `docker buildx` for multi-arch.
+# (No `# syntax=docker/dockerfile:X.Y` directive — we don't use any features
+# beyond what BuildKit's built-in frontend supports, and the directive forces
+# a docker-hub fetch that fails offline / behind restrictive firewalls.)
 #
 # Stages:
 #   1. builder  — compiles the five Go binaries.
 #   2. runtime  — Debian slim + curated tools + agent + SAFE binaries.
 
 ARG GO_VERSION=1.25.5
-ARG DEBIAN_TAG=forky-slim
+# Debian stable (13/trixie). "forky-slim" was an unreleased codename that
+# is no longer available on docker hub — pin to trixie-slim instead.
+ARG DEBIAN_TAG=trixie-slim
 ARG CLAUDE_CODE_VERSION=latest
 
 # -------------------------------------------------------------------- #
