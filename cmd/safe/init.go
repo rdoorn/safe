@@ -62,6 +62,15 @@ agents:
     # Unknown names error at config validation time.
     locked_tools: [Read, Write, Edit, Bash, Glob, Grep, NotebookEdit]
 
+    # Extra args appended to the agent's command line on every run,
+    # before any CLI args you pass after "safe claude". Useful for
+    # always-on flags like --dangerously-skip-permissions (bypasses
+    # claude's trust + per-tool permission prompts; the SAFE sandbox
+    # is the security boundary, so the prompts are mostly noise).
+    # extra_args: []
+    # extra_args:
+    #   - --dangerously-skip-permissions
+
     # Extra env vars set inside the container for the agent process.
     env:
       DISABLE_TELEMETRY: "1"

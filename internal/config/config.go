@@ -44,6 +44,11 @@ type Agent struct {
 	LockedTools         []string          `yaml:"locked_tools"`
 	Env                 map[string]string `yaml:"env"`
 	Customization       Customization     `yaml:"customization"`
+	// ExtraArgs are appended to the agent's argv on every run, before
+	// any args the user passes on the command line. Common use: pass
+	// flags like --dangerously-skip-permissions so claude doesn't prompt
+	// for trust+tool permissions inside the SAFE sandbox.
+	ExtraArgs []string `yaml:"extra_args"`
 }
 
 // Customization controls which read-only files/subdirs from the host

@@ -212,10 +212,17 @@ func buildDockerArgv(merged *config.Config, agent config.Agent, agentName string
 	claudeDir := filepath.Join(homeDir, ".claude")
 	mountFlags := dockerrun.ExpandMounts(claudeDir, agent.Customization)
 
+	// Prepend agent.ExtraArgs so user-supplied CLI args come last and
+	// can override (most flag parsers honor last-wins). Shell mode
+	// ignores AgentArgs entirely, so ExtraArgs has no effect there.
+	fullArgs := make([]string, 0, len(agent.ExtraArgs)+len(agentArgs))
+	fullArgs = append(fullArgs, agent.ExtraArgs...)
+	fullArgs = append(fullArgs, agentArgs...)
+
 	return dockerrun.BuildArgv(dockerrun.Inputs{
 		Config:     merged,
 		AgentName:  agentName,
-		AgentArgs:  agentArgs,
+		AgentArgs:  fullArgs,
 		CWD:        cwd,
 		RunID:      runID,
 		ConfigDir:  configDir,
