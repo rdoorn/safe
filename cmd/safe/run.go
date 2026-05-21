@@ -275,6 +275,10 @@ and override conflicting guidance below or elsewhere:
   to install one yourself.
 - **Python:** prefer ` + "`pip install --only-binary :all:`" + ` to avoid running arbitrary
   setup.py during install.
+- **Go:** use the native ` + "`toolchain`" + ` directive in go.mod to pin Go versions.
+  Don't try to install Go via pyenv-style mechanisms — Go downloads its
+  own toolchains via proxy.golang.org. GOPATH/GOMODCACHE are on the
+  persistent project cache so toolchains and modules survive across runs.
 - **Network is allowlist-only.** Domains not in .safe/safe.yaml's allowlist
   silently NXDOMAIN. If you need a new domain, ask the user.
 - **Filesystem:**

@@ -273,6 +273,13 @@ func agentEnv(parent []string) []string {
 		// cache volume which IS exec-allowed so `go test` can run its
 		// freshly compiled test binaries.
 		"GOTMPDIR="+goTmpDir,
+		// Go: keep GOPATH (modules, auto-toolchains, bin/) on the
+		// persistent project cache volume so `go.mod`'s `toolchain
+		// goX.Y.Z` directive downloads once per project and survives
+		// across `safe claude` runs. Default GOPATH is $HOME/go which
+		// is on tmpfs and gets re-downloaded every session.
+		"GOPATH=/home/agent/.cache/go",
+		"GOMODCACHE=/home/agent/.cache/go/pkg/mod",
 		// pnpm/npm: deny lifecycle scripts by default. Blocks the
 		// most common supply-chain attack vector (postinstall script
 		// runs arbitrary code at install time). User can override

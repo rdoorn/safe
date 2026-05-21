@@ -75,6 +75,11 @@ agents:
     # first run into <cwd>/.safe/tools/, then reuses on subsequent runs.
     # Exact pinned versions only (no ranges). Comment out if you want
     # to use whatever ships in the image.
+    #
+    # NOTE: there is no "tools.go" field. Go pins its own toolchain
+    # natively via the "toolchain goX.Y.Z" directive in your go.mod;
+    # the Go binary auto-downloads matching toolchains (cached on the
+    # persistent project volume). See go.dev/doc/toolchain.
     # tools:
     #   python: "3.14.0"
     #   node: "22.10.0"
