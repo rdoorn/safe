@@ -46,8 +46,8 @@ type Agent struct {
 	Customization       Customization     `yaml:"customization"`
 }
 
-// Customization controls which read-only subdirectories of ~/.claude are
-// bind-mounted into the container.
+// Customization controls which read-only files/subdirs from the host
+// are bind-mounted into the container.
 type Customization struct {
 	Skills     bool `yaml:"skills"`
 	Commands   bool `yaml:"commands"`
@@ -56,6 +56,11 @@ type Customization struct {
 	Statusline bool `yaml:"statusline"`
 	Hooks      bool `yaml:"hooks"`
 	Plugins    bool `yaml:"plugins"`
+	// State: bind-mount ~/.claude.json (the per-user state file with
+	// theme prefs, project history, etc.) read-only. Lets claude skip
+	// the theme prompt every session. RO means claude can't update it
+	// from inside the container — change it via host claude instead.
+	State bool `yaml:"state"`
 }
 
 // Resources is the Docker resource budget.

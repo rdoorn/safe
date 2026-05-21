@@ -74,7 +74,8 @@ agents:
       skills: true       # default
       commands: true     # default
       claudemd: true     # default
-      # settings: false  # default; settings.json may reference host paths
+      settings: true     # default; ~/.claude/settings.json (RO)
+      state: true        # default; ~/.claude.json (RO) — has theme prefs
       # statusline: false # default; executable runs as agent uid
       # hooks: false      # default; scripts run as agent uid
       # plugins: false    # default

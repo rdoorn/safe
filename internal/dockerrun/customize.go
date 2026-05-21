@@ -25,6 +25,9 @@ var claudeMounts = []claudeMount{
 	{srcRel: "statusline.sh", dstAbs: "/home/agent/.claude/statusline.sh", wantDir: false},
 	{srcRel: "hooks", dstAbs: "/home/agent/.claude/hooks", wantDir: true},
 	{srcRel: "plugins", dstAbs: "/home/agent/.claude/plugins", wantDir: true},
+	// .claude.json is a sibling of ~/.claude (NOT under it). The
+	// "../" navigates the join up one level. filepath.Join normalizes it.
+	{srcRel: "../.claude.json", dstAbs: "/home/agent/.claude.json", wantDir: false},
 }
 
 // gateFor returns the boolean field of c that gates the named mount.
@@ -44,6 +47,8 @@ func gateFor(c config.Customization, m claudeMount) bool {
 		return c.Hooks
 	case "plugins":
 		return c.Plugins
+	case "../.claude.json":
+		return c.State
 	default:
 		return false
 	}
