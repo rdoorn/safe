@@ -96,6 +96,14 @@ func run(agentName string, agentArgs []string) error {
 		fmt.Fprintln(os.Stderr, "safe-init: chown", agentClaudeDir, "skipped:", err)
 	}
 
+	// Stage in the host's .claude.json (per-user state with theme/trust
+	// prefs) to the agent's writable home. Host wrote it next to
+	// config.yaml under /etc/safe/. If absent (state mount disabled),
+	// silently skip.
+	if err := stageClaudeState(); err != nil {
+		fmt.Fprintln(os.Stderr, "safe-init: stage claude-state.json skipped:", err)
+	}
+
 	// Keyholder is only used in API-key mode. In OAuth mode the agent
 	// does its own /login in-container and keeps the access token in
 	// process memory. We must determine the auth mode BEFORE deciding to
@@ -249,6 +257,32 @@ func startUserProcess(bin string, args []string, uid, gid uint32, stdin []byte) 
 		return nil, fmt.Errorf("start %s: %w", bin, err)
 	}
 	return cmd, nil
+}
+
+// stageClaudeState copies the host-staged claude-state.json (delivered
+// inside the /etc/safe bind mount) into the agent's writable home at
+// /home/agent/.claude.json, with owner agent:agent and mode 0600. This
+// is how SAFE seeds claude's per-user state (theme prefs, trust list,
+// etc.) without giving the agent write access to the host file.
+//
+// A missing source is not an error — claude just starts fresh.
+func stageClaudeState() error {
+	const src = "/etc/safe/claude-state.json"
+	const dst = "/home/agent/.claude.json"
+	data, err := os.ReadFile(src)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("read %s: %w", src, err)
+	}
+	if err := os.WriteFile(dst, data, 0o600); err != nil {
+		return fmt.Errorf("write %s: %w", dst, err)
+	}
+	if err := os.Chown(dst, int(defaultAgentUID), int(defaultAgentGID)); err != nil {
+		return fmt.Errorf("chown %s: %w", dst, err)
+	}
+	return nil
 }
 
 // resolveAuthMode reads the SAFE config and decides whether the agent

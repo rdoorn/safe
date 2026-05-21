@@ -138,6 +138,10 @@ func BuildArgv(in Inputs) ([]string, error) { //nolint:gocyclo // unavoidable br
 		"-v", in.CWD+":/workspace",
 		"-v", homeVolume+":/home/agent/.cache",
 		"-v", in.ConfigDir+":/etc/safe:ro",
+		// Start the agent process inside the project mount. Without
+		// this, claude (and friends) default to / and prompt the user
+		// to confirm trust of the rootfs.
+		"-w", "/workspace",
 	)
 	argv = append(argv, in.MountFlags...)
 

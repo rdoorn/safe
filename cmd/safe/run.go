@@ -26,7 +26,7 @@ const (
 
 // runAgent is the path executed when the user runs `safe <agent> [args...]`.
 // It loads/validates config, prepares the per-run state, and execs docker.
-func runAgent(ctx context.Context, stdout, stderr io.Writer, xdgConfigDir, cwd, agentName string, agentArgs []string, shell bool) error {
+func runAgent(ctx context.Context, stdout, stderr io.Writer, xdgConfigDir, cwd, agentName string, agentArgs []string, shell bool) error { //nolint:gocyclo // linear pipeline with conditional stage logs; splitting hurts readability
 	logStage := func(stage int, msg string) {
 		_, _ = fmt.Fprintf(stderr, "safe: stage=%d %s\n", stage, msg)
 	}
@@ -73,6 +73,13 @@ func runAgent(ctx context.Context, stdout, stderr io.Writer, xdgConfigDir, cwd, 
 		return err
 	}
 
+	if agent.Customization.State {
+		if err := stageClaudeState(configDir); err != nil {
+			_, _ = fmt.Fprintln(stderr, "safe: stage claude state:", err)
+			// non-fatal — claude will just re-prompt for theme this run.
+		}
+	}
+
 	logStage(5, "build docker argv")
 	argv, err := buildDockerArgv(merged, agent, agentName, agentArgs, cwd, runID, configDir, shell)
 	if err != nil {
@@ -96,6 +103,34 @@ func runAgent(ctx context.Context, stdout, stderr io.Writer, xdgConfigDir, cwd, 
 
 	logStage(8, "wait for docker to exit")
 	return waitDocker(cmd)
+}
+
+// stageClaudeState copies the host's ~/.claude.json into the per-run
+// config dir as claude-state.json so safe-init can in turn copy it into
+// the agent's writable tmpfs home at /home/agent/.claude.json. The agent
+// then has the host's theme/prefs/project history pre-populated AND can
+// update it freely — but those updates only live for this container's
+// lifetime (next session reads fresh from host).
+//
+// A missing host file is not an error: claude will just start fresh.
+func stageClaudeState(configDir string) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("user home: %w", err)
+	}
+	src := filepath.Join(home, ".claude.json")
+	data, err := os.ReadFile(src) //nolint:gosec // path is the user's own home
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("read %s: %w", src, err)
+	}
+	dst := filepath.Join(configDir, "claude-state.json")
+	if err := os.WriteFile(dst, data, 0o644); err != nil { //nolint:gosec // public to in-container uids; safe-init copies to agent home
+		return fmt.Errorf("write %s: %w", dst, err)
+	}
+	return nil
 }
 
 // authSecretSource returns a short label for stage logs.
