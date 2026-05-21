@@ -153,6 +153,16 @@ func run(agentName string, agentArgs []string) error { //nolint:gocyclo // linea
 	if err := stageClaudeSettings(); err != nil {
 		fmt.Fprintln(os.Stderr, "safe-init: stage claude-settings.json skipped:", err)
 	}
+	if err := stageClaudeMD(); err != nil {
+		fmt.Fprintln(os.Stderr, "safe-init: stage claude-CLAUDE.md skipped:", err)
+	}
+
+	// Provision per-project language versions (pyenv/fnm). Bind-mount
+	// dirs already exist; if user requested specific versions in
+	// safe.yaml's tools block, install them (no-op if already present).
+	if err := ensureProjectTools(agentName); err != nil {
+		fmt.Fprintln(os.Stderr, "safe-init: tool provisioning skipped:", err)
+	}
 
 	logStage(3, "run safe-fw to seed nftables")
 	if err := runSafeFW(); err != nil {
@@ -263,6 +273,20 @@ func agentEnv(parent []string) []string {
 		// cache volume which IS exec-allowed so `go test` can run its
 		// freshly compiled test binaries.
 		"GOTMPDIR="+goTmpDir,
+		// pnpm/npm: deny lifecycle scripts by default. Blocks the
+		// most common supply-chain attack vector (postinstall script
+		// runs arbitrary code at install time). User can override
+		// per-package via `pnpm approve-builds <pkg>` or
+		// `pnpm install --allow-build`.
+		"NPM_CONFIG_IGNORE_SCRIPTS=true",
+		// pyenv/fnm: roots point at the bind-mounted project-local
+		// tool dirs. Users add `eval "$(pyenv init -)"` and
+		// `eval "$(fnm env --use-on-cd)"` to their shell to pick the
+		// version per-cwd, or read /workspace/.python-version /
+		// .nvmrc directly.
+		"PYENV_ROOT=/opt/pyenv",
+		"FNM_DIR=/opt/fnm",
+		"PATH=/opt/pyenv/shims:/opt/pyenv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
 	)
 }
 
@@ -301,6 +325,13 @@ func startUserProcess(bin string, args []string, uid, gid uint32, stdin []byte) 
 // — see that function's doc comment.
 func stageClaudeSettings() error {
 	return stageAsAgent("/etc/safe/claude-settings.json", "/home/agent/.claude/settings.json")
+}
+
+// stageClaudeMD copies the host-staged claude-CLAUDE.md (already has the
+// SAFE sandbox preamble prepended by the host CLI) into the agent's
+// writable home.
+func stageClaudeMD() error {
+	return stageAsAgent("/etc/safe/claude-CLAUDE.md", "/home/agent/.claude/CLAUDE.md")
 }
 
 // stageAsAgent copies src to dst by forking /bin/sh as the agent uid.

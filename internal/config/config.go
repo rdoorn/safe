@@ -54,6 +54,20 @@ type Agent struct {
 	// flags like --dangerously-skip-permissions so claude doesn't prompt
 	// for trust+tool permissions inside the SAFE sandbox.
 	ExtraArgs []string `yaml:"extra_args"`
+	// Tools requests specific language-runtime versions for this agent.
+	// SAFE provisions them into <cwd>/.safe/tools/ (project-local) on
+	// first run and reuses them on subsequent runs. Versions stay pinned
+	// across container rebuilds.
+	Tools AgentTools `yaml:"tools"`
+}
+
+// AgentTools pins language-runtime versions installed on demand by SAFE.
+// Empty string = use whatever ships in the runtime image. Values must be
+// exact versions (e.g., "3.14.0", "22.10.0"); ranges are not supported.
+// If absent here, SAFE falls back to <cwd>/.python-version, .nvmrc, etc.
+type AgentTools struct {
+	Python string `yaml:"python"`
+	Node   string `yaml:"node"`
 }
 
 // Customization controls which read-only files/subdirs from the host

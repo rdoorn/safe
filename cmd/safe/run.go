@@ -85,6 +85,23 @@ func runAgent(ctx context.Context, stdout, stderr io.Writer, xdgConfigDir, cwd, 
 			// non-fatal — claude falls back to its built-in defaults.
 		}
 	}
+	if agent.Customization.ClaudeMD {
+		if err := stageClaudeMD(configDir); err != nil {
+			_, _ = fmt.Fprintln(stderr, "safe: stage claude CLAUDE.md:", err)
+			// non-fatal — claude starts without the sandbox preamble.
+		}
+	}
+	// Tool dirs live in <cwd>/.safe/tools/{python,node}/ and are bind-
+	// mounted into the container at /opt/pyenv/versions and
+	// /opt/fnm/node-versions. Pre-create them on the host so docker
+	// doesn't auto-mkdir them as root (which would defeat the agent's
+	// ability to write tool installs).
+	for _, sub := range []string{"tools/python", "tools/node"} {
+		dir := filepath.Join(cwd, ".safe", sub)
+		if err := os.MkdirAll(dir, 0o755); err != nil { //nolint:gosec
+			_, _ = fmt.Fprintln(stderr, "safe: mkdir", dir, "skipped:", err)
+		}
+	}
 
 	logStage(5, "build docker argv")
 	argv, err := buildDockerArgv(merged, agent, agentName, agentArgs, cwd, runID, configDir, shell)
@@ -213,6 +230,59 @@ func stageClaudeSettings(configDir string) error {
 	}
 	return nil
 }
+
+// stageClaudeMD stages the host's ~/.claude/CLAUDE.md into the per-run
+// config dir as claude-CLAUDE.md, with a SAFE sandbox policy preamble
+// prepended. safe-init copies it to /home/agent/.claude/CLAUDE.md as
+// the agent uid. claude reads CLAUDE.md at session start, so the
+// preamble is part of the agent's effective system prompt.
+//
+// A missing host file is fine: we ship just the preamble.
+func stageClaudeMD(configDir string) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("user home: %w", err)
+	}
+	src := filepath.Join(home, ".claude", "CLAUDE.md")
+	userContent, err := os.ReadFile(src) //nolint:gosec // user's own home
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("read %s: %w", src, err)
+	}
+	body := safeSandboxPreamble
+	if len(userContent) > 0 {
+		body += "\n\n# === your local CLAUDE.md follows ===\n\n" + string(userContent)
+	}
+	dst := filepath.Join(configDir, "claude-CLAUDE.md")
+	if err := os.WriteFile(dst, []byte(body), 0o644); err != nil { //nolint:gosec
+		return fmt.Errorf("write %s: %w", dst, err)
+	}
+	return nil
+}
+
+// safeSandboxPreamble is prepended to the agent's CLAUDE.md so claude
+// sees SAFE's policy on every session start. Keep it tight — long
+// preambles waste tokens.
+const safeSandboxPreamble = `# SAFE sandbox policy
+
+You are running inside the SAFE container sandbox. These constraints apply
+and override conflicting guidance below or elsewhere:
+
+- **Package install: pnpm only.** npm and yarn are not on PATH. Use ` + "`pnpm add`" + `,
+  ` + "`pnpm install`" + `, ` + "`pnpm run`" + `. Lifecycle scripts (pre/post/install) are skipped by
+  default (NPM_CONFIG_IGNORE_SCRIPTS=true). If a package needs them, tell the
+  user; they can ` + "`pnpm approve-builds <pkg>`" + ` per-package.
+- **apt is locked.** If a system package is missing, ask the user; don't try
+  to install one yourself.
+- **Python:** prefer ` + "`pip install --only-binary :all:`" + ` to avoid running arbitrary
+  setup.py during install.
+- **Network is allowlist-only.** Domains not in .safe/safe.yaml's allowlist
+  silently NXDOMAIN. If you need a new domain, ask the user.
+- **Filesystem:**
+  - /workspace = the project (host bind, persistent).
+  - ~/.cache and ~/.claude/projects = persistent docker volumes (build caches,
+    session history; survive ` + "`safe claude`" + ` exits).
+  - Other ~/ paths = tmpfs (lost at container exit).
+  - /tmp is noexec; use $GOTMPDIR (~/.cache/gotmp) for exec-able scratch.`
 
 // authSecretSource returns a short label for stage logs.
 func authSecretSource(a config.Agent) string {

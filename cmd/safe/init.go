@@ -71,6 +71,14 @@ agents:
     # extra_args:
     #   - --dangerously-skip-permissions
 
+    # Per-project language-runtime versions. SAFE provisions these on
+    # first run into <cwd>/.safe/tools/, then reuses on subsequent runs.
+    # Exact pinned versions only (no ranges). Comment out if you want
+    # to use whatever ships in the image.
+    # tools:
+    #   python: "3.14.0"
+    #   node: "22.10.0"
+
     # Extra env vars set inside the container for the agent process.
     env:
       DISABLE_TELEMETRY: "1"
@@ -100,6 +108,11 @@ allowlist:
   - proxy.golang.org
   - sum.golang.org
   - deb.debian.org
+  # Required if you use the "tools:" block to provision pyenv/fnm versions:
+  - www.python.org           # pyenv install source tarballs
+  - nodejs.org               # fnm install prebuilt node tarballs
+  - github.com               # fnm pulls from Schniz/fnm releases on GH
+  - objects.githubusercontent.com  # GH releases CDN
 
 # Upstream DNS resolvers safe-dns forwards allowed queries to. Reachable
 # only by the firewall uid (200) inside the container.

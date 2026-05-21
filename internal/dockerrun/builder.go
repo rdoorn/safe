@@ -165,6 +165,12 @@ func BuildArgv(in Inputs) ([]string, error) { //nolint:gocyclo // unavoidable br
 		"-v", homeVolume+":/home/agent/.cache",
 		"-v", claudeProjectsVolume+":/home/agent/.claude/projects",
 		"-v", in.ConfigDir+":/etc/safe:ro",
+		// Project-local tool versions. SAFE provisions pyenv/fnm into
+		// these dirs on first request and reuses on subsequent runs.
+		// The dirs are inside the project's .safe/tools/ so they're
+		// gitignored and follow the project.
+		"-v", in.CWD+"/.safe/tools/python:/opt/pyenv/versions",
+		"-v", in.CWD+"/.safe/tools/node:/opt/fnm/node-versions",
 		// Start the agent process inside the project mount. Without
 		// this, claude (and friends) default to / and prompt the user
 		// to confirm trust of the rootfs.

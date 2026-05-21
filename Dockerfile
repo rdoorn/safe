@@ -33,14 +33,18 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LC_ALL=C.UTF-8
 
 # --- Base system + curated CLI tools (Node from Debian forky) ---
+# pyenv build deps included so `pyenv install <version>` works on first
+# project use; fnm needs unzip to extract its downloads.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates nftables iproute2 procps \
-      git curl wget jq make \
+      git curl wget jq make unzip xz-utils \
       build-essential libcap2-bin \
       python3 python3-pip python3-venv \
       nodejs npm \
       ripgrep fd-find \
       bash-completion vim-tiny less \
+      libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev \
+      libffi-dev liblzma-dev tk-dev \
  && rm -rf /var/lib/apt/lists/*
 
 # Friendly alias: Debian ships fd-find as `fdfind` to avoid an apt collision.
@@ -60,6 +64,34 @@ RUN set -eux; \
 
 # --- Claude Code ---
 RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
+
+# --- pnpm: the only npm-compat package manager the agent should reach for ---
+# Pin per the project's "at least 7 days old" rule (overrides global LTS).
+ARG PNPM_VERSION=9.15.0
+RUN npm install -g pnpm@${PNPM_VERSION}
+
+# --- pyenv: per-project Python versions ---
+# Lives at /opt/pyenv (rootfs, read-only at runtime). Installed Python
+# versions go to /opt/pyenv/versions, which SAFE bind-mounts from the
+# host's <cwd>/.safe/tools/python so installs persist per-project.
+ARG PYENV_VERSION=v2.4.21
+RUN git clone --depth 1 --branch ${PYENV_VERSION} https://github.com/pyenv/pyenv.git /opt/pyenv \
+ && rm -rf /opt/pyenv/.git
+
+# --- fnm: per-project Node versions ---
+# Static binary download. FNM_DIR is set per-session by safe-init to
+# point at the project-local volume; the CLI itself lives in /usr/local/bin.
+ARG FNM_VERSION=v1.38.1
+RUN set -eux; \
+    case "${TARGETARCH:-amd64}" in \
+      amd64) FNM_ARCH=linux ;; \
+      arm64) FNM_ARCH=arm64 ;; \
+      *) echo "unsupported TARGETARCH: ${TARGETARCH}"; exit 1 ;; \
+    esac; \
+    curl -fsSL "https://github.com/Schniz/fnm/releases/download/${FNM_VERSION}/fnm-${FNM_ARCH}.zip" -o /tmp/fnm.zip; \
+    unzip -j /tmp/fnm.zip fnm -d /usr/local/bin/; \
+    rm /tmp/fnm.zip; \
+    chmod 0755 /usr/local/bin/fnm
 
 # --- SAFE binaries ---
 COPY --from=builder /src/bin/safe        /usr/local/bin/safe
@@ -115,6 +147,19 @@ RUN mkdir -p /etc/safe /var/log/safe /run/safe /workspace \
 RUN set -eux; \
     find / -xdev -perm /6000 -type f -print -exec chmod a-sx {} \; 2>/dev/null || true; \
     rm -f /usr/bin/sudo /usr/bin/su /etc/sudoers /etc/sudoers.d/* 2>/dev/null || true
+
+# --- Lock down npm-family + apt for the agent uid ---
+# Agent uses pnpm exclusively. npm and yarn binaries are left in the image
+# (claude-code's internals may invoke them at install time during image build)
+# but the agent uid can't exec them at runtime. apt is similarly locked: only
+# safe-init (root) can install packages; the agent cannot.
+# chmod follows symlinks on Linux, so this affects the underlying JS files.
+RUN set -eux; \
+    for f in /usr/local/bin/npm /usr/local/bin/yarn /usr/bin/yarn \
+             /usr/bin/apt /usr/bin/apt-get /usr/bin/apt-cache /usr/bin/apt-key \
+             /usr/bin/dpkg /usr/sbin/dpkg-reconfigure; do \
+      if [ -e "$f" ]; then chgrp root "$f" && chmod 0750 "$f"; fi; \
+    done
 
 # --- Image labels ---
 LABEL org.opencontainers.image.title="safe-runtime" \

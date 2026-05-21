@@ -34,7 +34,10 @@ func TestExpandMountsMountsEnabledOnesOnly(t *testing.T) {
 	joined := flagsAsString(flags)
 	require.Contains(t, joined, filepath.Join(claudeDir, "skills")+":/home/agent/.claude/skills:ro")
 	require.Contains(t, joined, filepath.Join(claudeDir, "commands")+":/home/agent/.claude/commands:ro")
-	require.Contains(t, joined, filepath.Join(claudeDir, "CLAUDE.md")+":/home/agent/.claude/CLAUDE.md:ro")
+	// CLAUDE.md is no longer bind-mounted; it's staged via stageClaudeMD
+	// on the host side so SAFE can inject the sandbox preamble.
+	require.NotContains(t, joined, "/home/agent/.claude/CLAUDE.md:ro",
+		"CLAUDE.md is staged, not bind-mounted")
 	require.NotContains(t, joined, "hooks", "hooks was off")
 }
 
