@@ -24,7 +24,11 @@ type claudeMount struct {
 var claudeMounts = []claudeMount{
 	{srcRel: "skills", dstAbs: "/home/agent/.claude/skills", wantDir: true},
 	{srcRel: "commands", dstAbs: "/home/agent/.claude/commands", wantDir: true},
+	// claude's statusline command is whatever the user references in
+	// settings.json. We mount both common filenames; whichever exists on
+	// the host is bind-mounted (ExpandMounts skips missing sources).
 	{srcRel: "statusline.sh", dstAbs: "/home/agent/.claude/statusline.sh", wantDir: false},
+	{srcRel: "statusline-command.sh", dstAbs: "/home/agent/.claude/statusline-command.sh", wantDir: false},
 	{srcRel: "hooks", dstAbs: "/home/agent/.claude/hooks", wantDir: true},
 	{srcRel: "plugins", dstAbs: "/home/agent/.claude/plugins", wantDir: true},
 }
@@ -36,7 +40,7 @@ func gateFor(c config.Customization, m claudeMount) bool {
 		return c.Skills
 	case "commands":
 		return c.Commands
-	case "statusline.sh":
+	case "statusline.sh", "statusline-command.sh":
 		return c.Statusline
 	case "hooks":
 		return c.Hooks
