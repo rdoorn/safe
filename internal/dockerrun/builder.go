@@ -100,7 +100,7 @@ func BuildArgv(in Inputs) ([]string, error) { //nolint:gocyclo // unavoidable br
 		// achieved by chmod 0750 + chgrp firewall on safe-dns inside the
 		// image — the agent uid can't exec safe-dns at all.
 		"--read-only",
-		"--tmpfs", "/tmp:rw,nosuid,nodev,noexec,size=256m",
+		"--tmpfs", "/tmp:rw,nosuid,nodev,noexec,size=512m",
 		"--tmpfs", "/run:rw,nosuid,nodev,noexec,size=64m",
 		// mode=755 (not 700) so safe-init (uid 0, no CAP_DAC_OVERRIDE) can
 		// traverse /home/agent to chown the .claude subdir over to agent.

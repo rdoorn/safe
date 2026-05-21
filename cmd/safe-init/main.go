@@ -46,6 +46,8 @@ const (
 	safeDNS             = "/usr/sbin/safe-dns"
 	safeKeyholder       = "/usr/sbin/safe-keyholder"
 	agentClaudeDir      = "/home/agent/.claude"
+	agentCacheDir       = "/home/agent/.cache"
+	goTmpDir            = "/home/agent/.cache/gotmp"
 	keyPipeTimeout      = 10 * time.Second
 )
 
@@ -74,7 +76,7 @@ func main() {
 // internal/dockerrun/constants.go; the two MUST be kept in lockstep.
 const keyholderEnabled = true
 
-func run(agentName string, agentArgs []string) error {
+func run(agentName string, agentArgs []string) error { //nolint:gocyclo // linear init pipeline with best-effort skip branches; splitting hurts readability
 	logStage := func(stage int, msg string) {
 		fmt.Fprintf(os.Stderr, "safe-init: stage=%d %s\n", stage, msg)
 	}
@@ -94,6 +96,22 @@ func run(agentName string, agentArgs []string) error {
 	// option in BuildArgv; only the subdir needs fixing here.
 	if err := os.Chown(agentClaudeDir, int(defaultAgentUID), int(defaultAgentGID)); err != nil && !os.IsNotExist(err) {
 		fmt.Fprintln(os.Stderr, "safe-init: chown", agentClaudeDir, "skipped:", err)
+	}
+	// Persistent build/tool cache is bind-mounted as a docker named
+	// volume; volumes are created root-owned by default. Agent can't
+	// write to it without this chown. Without it, Go's GOCACHE,
+	// GOMODCACHE, npm cache, pip cache, etc. all fail.
+	if err := os.Chown(agentCacheDir, int(defaultAgentUID), int(defaultAgentGID)); err != nil && !os.IsNotExist(err) {
+		fmt.Fprintln(os.Stderr, "safe-init: chown", agentCacheDir, "skipped:", err)
+	}
+	// Pre-create $GOTMPDIR so Go's test linker (which execs binaries
+	// from $WORK) has an exec-allowed scratch dir; /tmp is noexec to
+	// block RCE-payload exec, but go test needs to exec freshly built
+	// test binaries somewhere.
+	if err := os.MkdirAll(goTmpDir, 0o755); err != nil { //nolint:gosec
+		fmt.Fprintln(os.Stderr, "safe-init: mkdir", goTmpDir, "skipped:", err)
+	} else if err := os.Chown(goTmpDir, int(defaultAgentUID), int(defaultAgentGID)); err != nil {
+		fmt.Fprintln(os.Stderr, "safe-init: chown", goTmpDir, "skipped:", err)
 	}
 
 	// Stage in the host's .claude.json (per-user state with theme/trust
@@ -232,6 +250,10 @@ func agentEnv(parent []string) []string {
 		"HOME=/home/agent",
 		"USER=agent",
 		"LOGNAME=agent",
+		// /tmp is noexec (anti-RCE); GOTMPDIR points at the persistent
+		// cache volume which IS exec-allowed so `go test` can run its
+		// freshly compiled test binaries.
+		"GOTMPDIR="+goTmpDir,
 	)
 }
 
