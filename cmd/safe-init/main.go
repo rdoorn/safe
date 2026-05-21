@@ -35,20 +35,21 @@ import (
 )
 
 const (
-	defaultFirewallUID  = 200
-	defaultFirewallGID  = 200
-	defaultKeyholderUID = 201
-	defaultAgentUID     = 1000
-	defaultAgentGID     = 1000
-	bootstrapPort       = "9099" // must match internal/dockerrun.BootstrapPort
-	configPath          = "/etc/safe/config.yaml"
-	safeFW              = "/usr/sbin/safe-fw"
-	safeDNS             = "/usr/sbin/safe-dns"
-	safeKeyholder       = "/usr/sbin/safe-keyholder"
-	agentClaudeDir      = "/home/agent/.claude"
-	agentCacheDir       = "/home/agent/.cache"
-	goTmpDir            = "/home/agent/.cache/gotmp"
-	keyPipeTimeout      = 10 * time.Second
+	defaultFirewallUID     = 200
+	defaultFirewallGID     = 200
+	defaultKeyholderUID    = 201
+	defaultAgentUID        = 1000
+	defaultAgentGID        = 1000
+	bootstrapPort          = "9099" // must match internal/dockerrun.BootstrapPort
+	configPath             = "/etc/safe/config.yaml"
+	safeFW                 = "/usr/sbin/safe-fw"
+	safeDNS                = "/usr/sbin/safe-dns"
+	safeKeyholder          = "/usr/sbin/safe-keyholder"
+	agentClaudeDir         = "/home/agent/.claude"
+	agentClaudeProjectsDir = "/home/agent/.claude/projects"
+	agentCacheDir          = "/home/agent/.cache"
+	goTmpDir               = "/home/agent/.cache/gotmp"
+	keyPipeTimeout         = 10 * time.Second
 )
 
 func main() {
@@ -81,6 +82,28 @@ func run(agentName string, agentArgs []string) error { //nolint:gocyclo // linea
 		fmt.Fprintf(os.Stderr, "safe-init: stage=%d %s\n", stage, msg)
 	}
 
+	// Bootstrap secret MUST be received first — even before hidepid and
+	// the chown block. Docker exposes the host port mapping as soon as
+	// the container starts; if the host CLI's PipeKey connects and
+	// writes before our listener exists, docker-proxy accepts the bytes
+	// and drops them silently. That race was visible as a ~1-in-10
+	// "accept on :9099: i/o timeout" failure when we did chowns first.
+	var secret []byte
+	authMode := ""
+	if keyholderEnabled {
+		logStage(0, "read bootstrap secret (FIRST; before any other work)")
+		var ferr error
+		authMode, ferr = resolveAuthMode(agentName)
+		if ferr != nil {
+			return fmt.Errorf("determine auth mode: %w", ferr)
+		}
+		s, rerr := readSecretFromTCP(bootstrapPort, keyPipeTimeout)
+		if rerr != nil {
+			return fmt.Errorf("read auth secret: %w", rerr)
+		}
+		secret = s
+	}
+
 	logStage(1, "remount /proc hidepid=2 (best-effort)")
 	if err := initd.RemountProcHidepid(defaultFirewallGID); err != nil {
 		fmt.Fprintln(os.Stderr, "safe-init: hidepid remount skipped:", err)
@@ -104,6 +127,12 @@ func run(agentName string, agentArgs []string) error { //nolint:gocyclo // linea
 	if err := os.Chown(agentCacheDir, int(defaultAgentUID), int(defaultAgentGID)); err != nil && !os.IsNotExist(err) {
 		fmt.Fprintln(os.Stderr, "safe-init: chown", agentCacheDir, "skipped:", err)
 	}
+	// claude session jsonl files live here. Persistent docker volume
+	// mounted by SAFE; default root-owned, agent (uid 1000) needs to
+	// write claude's session state for /resume to work across runs.
+	if err := os.Chown(agentClaudeProjectsDir, int(defaultAgentUID), int(defaultAgentGID)); err != nil && !os.IsNotExist(err) {
+		fmt.Fprintln(os.Stderr, "safe-init: chown", agentClaudeProjectsDir, "skipped:", err)
+	}
 	// Pre-create $GOTMPDIR so Go's test linker (which execs binaries
 	// from $WORK) has an exec-allowed scratch dir; /tmp is noexec to
 	// block RCE-payload exec, but go test needs to exec freshly built
@@ -123,26 +152,6 @@ func run(agentName string, agentArgs []string) error { //nolint:gocyclo // linea
 	}
 	if err := stageClaudeSettings(); err != nil {
 		fmt.Fprintln(os.Stderr, "safe-init: stage claude-settings.json skipped:", err)
-	}
-
-	// Bootstrap secret must come BEFORE safe-fw/safe-dns so the
-	// in-container listener is up by the time docker reports the port
-	// mapping to the host (otherwise docker-proxy eagerly accepts and
-	// drops the host-side bytes silently).
-	authMode, err := resolveAuthMode(agentName)
-	if err != nil {
-		return fmt.Errorf("determine auth mode: %w", err)
-	}
-
-	var secret []byte
-	if keyholderEnabled {
-		logStage(2, fmt.Sprintf("read bootstrap secret (mode=%s, listener first)", authMode))
-		secret, err = readSecretFromTCP(bootstrapPort, keyPipeTimeout)
-		if err != nil {
-			return fmt.Errorf("read auth secret: %w", err)
-		}
-	} else {
-		logStage(2, "SKIPPED bootstrap (keyholderEnabled=false)")
 	}
 
 	logStage(3, "run safe-fw to seed nftables")

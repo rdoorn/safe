@@ -10,6 +10,11 @@ import (
 
 // Config is the top-level SAFE configuration as parsed from safe.yaml.
 type Config struct {
+	// ProjectID stabilizes the docker volume names SAFE uses for this
+	// project's persistent caches. Defaults to a sha1 hash of the cwd.
+	// Override only if you want to share volumes across machines or
+	// across multiple working trees of the same project.
+	ProjectID      string           `yaml:"project_id"`
 	Agents         map[string]Agent `yaml:"agents"`
 	Allowlist      []string         `yaml:"allowlist"`
 	UpstreamDNS    []string         `yaml:"upstream_dns"`

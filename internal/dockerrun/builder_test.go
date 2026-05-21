@@ -165,7 +165,7 @@ func TestBuildArgvIncludesRequiredCaps(t *testing.T) {
 	})
 	require.NoError(t, err)
 	joined := strings.Join(argv, " ")
-	for _, c := range []string{"NET_ADMIN", "SETUID", "SETGID", "KILL", "CHOWN"} {
+	for _, c := range []string{"NET_ADMIN", "SETUID", "SETGID", "KILL", "CHOWN", "DAC_OVERRIDE"} {
 		require.Contains(t, joined, "--cap-add "+c,
 			"%s must be in the required cap set: SAFE's uid-separation architecture cannot function without it", c)
 	}

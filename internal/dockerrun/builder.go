@@ -3,11 +3,20 @@
 package dockerrun
 
 import (
+	"crypto/sha1" //nolint:gosec // not for security; stable short hash of cwd path
+	"encoding/hex"
 	"fmt"
 	"sort"
 
 	"github.com/rdoorn/safe/internal/config"
 )
+
+// projectHash returns a stable 12-char hex identifier for a project path.
+// Used as the docker-volume-name suffix; the value is not security-sensitive.
+func projectHash(cwd string) string {
+	h := sha1.Sum([]byte(cwd)) //nolint:gosec // see top-level comment
+	return hex.EncodeToString(h[:6])
+}
 
 // Inputs bundles everything BuildArgv needs.
 type Inputs struct {
@@ -56,10 +65,20 @@ func BuildArgv(in Inputs) ([]string, error) { //nolint:gocyclo // unavoidable br
 	if pids == 0 {
 		pids = 256
 	}
+	// Docker named-volume keys for per-project persistent state. Keyed
+	// on a stable identifier (Config.ProjectID, default sha1 of CWD) so
+	// the volumes survive across `safe claude` invocations of the same
+	// project. RunID is per-invocation and would create a fresh empty
+	// volume each time.
+	projectKey := in.Config.ProjectID
+	if projectKey == "" {
+		projectKey = projectHash(in.CWD)
+	}
 	homeVolume := in.HomeVolumeName
 	if homeVolume == "" {
-		homeVolume = "safe-cache-" + in.RunID
+		homeVolume = "safe-cache-" + projectKey
 	}
+	claudeProjectsVolume := "safe-claude-" + projectKey
 
 	argv := []string{
 		"docker", "run",
@@ -83,6 +102,13 @@ func BuildArgv(in Inputs) ([]string, error) { //nolint:gocyclo // unavoidable br
 		// this, claude can't write its own state/credentials into its
 		// own home dir.
 		"--cap-add", "CHOWN",
+		// DAC_OVERRIDE: safe-init (root inside container) needs to
+		// write into /home/agent (mode 755 owned by uid 1000) during
+		// staging. Without this, Linux DAC blocks root because root
+		// matches the "other" class on a 755 dir. The agent uid never
+		// has this cap (we drop it from the bounding set in
+		// hardenAgentSubtree before the agent exec).
+		"--cap-add", "DAC_OVERRIDE",
 	}
 	// Opt-in extras from config. Validated against allowedExtraCaps at
 	// load time, so anything reaching here is one of SYS_ADMIN, SYS_PTRACE,
@@ -137,6 +163,7 @@ func BuildArgv(in Inputs) ([]string, error) { //nolint:gocyclo // unavoidable br
 	argv = append(argv,
 		"-v", in.CWD+":/workspace",
 		"-v", homeVolume+":/home/agent/.cache",
+		"-v", claudeProjectsVolume+":/home/agent/.claude/projects",
 		"-v", in.ConfigDir+":/etc/safe:ro",
 		// Start the agent process inside the project mount. Without
 		// this, claude (and friends) default to / and prompt the user

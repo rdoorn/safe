@@ -39,6 +39,7 @@ func hardenAgentSubtree() error {
 		unix.CAP_SETGID,
 		unix.CAP_KILL,
 		unix.CAP_CHOWN,
+		unix.CAP_DAC_OVERRIDE,
 		unix.CAP_SYS_ADMIN, // also drop optional extras the agent doesn't need
 		unix.CAP_SYS_PTRACE,
 		unix.CAP_NET_BIND_SERVICE,
