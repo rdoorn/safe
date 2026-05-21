@@ -79,6 +79,12 @@ func runAgent(ctx context.Context, stdout, stderr io.Writer, xdgConfigDir, cwd, 
 			// non-fatal — claude will just re-prompt for theme this run.
 		}
 	}
+	if agent.Customization.Settings {
+		if err := stageClaudeSettings(configDir); err != nil {
+			_, _ = fmt.Fprintln(stderr, "safe: stage claude settings:", err)
+			// non-fatal — claude falls back to its built-in defaults.
+		}
+	}
 
 	logStage(5, "build docker argv")
 	argv, err := buildDockerArgv(merged, agent, agentName, agentArgs, cwd, runID, configDir, shell)
@@ -163,6 +169,46 @@ func stageClaudeState(configDir string) error {
 	}
 	dst := filepath.Join(configDir, "claude-state.json")
 	if err := os.WriteFile(dst, out, 0o644); err != nil { //nolint:gosec // public to in-container uids; safe-init copies to agent home
+		return fmt.Errorf("write %s: %w", dst, err)
+	}
+	return nil
+}
+
+// stageClaudeSettings stages the host's ~/.claude/settings.json into
+// the per-run config dir as claude-settings.json. safe-init then copies
+// it to /home/agent/.claude/settings.json as the agent uid. We inject:
+//   - skipDangerousModePermissionPrompt = true:
+//     suppresses claude's "Bypass Permissions mode" warning. The SAFE
+//     sandbox is the security boundary; the warning would be noise.
+//
+// A missing host file is not an error: we synthesize a minimal one.
+func stageClaudeSettings(configDir string) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("user home: %w", err)
+	}
+	src := filepath.Join(home, ".claude", "settings.json")
+	var settings map[string]any
+	data, err := os.ReadFile(src) //nolint:gosec // path is the user's own home
+	switch {
+	case err == nil:
+		if err := json.Unmarshal(data, &settings); err != nil {
+			return fmt.Errorf("parse %s: %w", src, err)
+		}
+	case os.IsNotExist(err):
+		settings = map[string]any{}
+	default:
+		return fmt.Errorf("read %s: %w", src, err)
+	}
+
+	settings["skipDangerousModePermissionPrompt"] = true
+
+	out, err := json.Marshal(settings)
+	if err != nil {
+		return fmt.Errorf("marshal staged settings: %w", err)
+	}
+	dst := filepath.Join(configDir, "claude-settings.json")
+	if err := os.WriteFile(dst, out, 0o644); err != nil { //nolint:gosec // safe-init copies to agent home
 		return fmt.Errorf("write %s: %w", dst, err)
 	}
 	return nil

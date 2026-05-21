@@ -103,6 +103,9 @@ func run(agentName string, agentArgs []string) error {
 	if err := stageClaudeState(); err != nil {
 		fmt.Fprintln(os.Stderr, "safe-init: stage claude-state.json skipped:", err)
 	}
+	if err := stageClaudeSettings(); err != nil {
+		fmt.Fprintln(os.Stderr, "safe-init: stage claude-settings.json skipped:", err)
+	}
 
 	// Bootstrap secret must come BEFORE safe-fw/safe-dns so the
 	// in-container listener is up by the time docker reports the port
@@ -255,6 +258,34 @@ func startUserProcess(bin string, args []string, uid, gid uint32, stdin []byte) 
 	return cmd, nil
 }
 
+// stageClaudeSettings is the settings.json sibling of stageClaudeState
+// — see that function's doc comment.
+func stageClaudeSettings() error {
+	return stageAsAgent("/etc/safe/claude-settings.json", "/home/agent/.claude/settings.json")
+}
+
+// stageAsAgent copies src to dst by forking /bin/sh as the agent uid.
+// We don't write directly because safe-init (uid 0) doesn't have
+// CAP_DAC_OVERRIDE and /home/agent is owned by uid 1000.
+func stageAsAgent(src, dst string) error {
+	if _, err := os.Stat(src); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("stat %s: %w", src, err)
+	}
+	cmd := exec.Command("/bin/sh", "-c", "umask 077 && cat "+src+" > "+dst) //nolint:gosec // src and dst are constants from callers
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Credential: &syscall.Credential{Uid: defaultAgentUID, Gid: defaultAgentGID, NoSetGroups: true},
+	}
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("stage as agent uid: %w", err)
+	}
+	return nil
+}
+
 // stageClaudeState copies the host-staged claude-state.json (delivered
 // inside the /etc/safe bind mount) into the agent's writable home at
 // /home/agent/.claude.json with owner agent:agent and mode 0600. This
@@ -268,24 +299,7 @@ func startUserProcess(bin string, args []string, uid, gid uint32, stdin []byte) 
 //
 // A missing source is not an error — claude just starts fresh.
 func stageClaudeState() error {
-	const src = "/etc/safe/claude-state.json"
-	const dst = "/home/agent/.claude.json"
-	if _, err := os.Stat(src); err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return fmt.Errorf("stat %s: %w", src, err)
-	}
-	cmd := exec.Command("/bin/sh", "-c", "umask 077 && cat "+src+" > "+dst) //nolint:gosec // src and dst are constants
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Credential: &syscall.Credential{Uid: defaultAgentUID, Gid: defaultAgentGID, NoSetGroups: true},
-	}
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("stage as agent uid: %w", err)
-	}
-	return nil
+	return stageAsAgent("/etc/safe/claude-state.json", "/home/agent/.claude.json")
 }
 
 // resolveAuthMode reads the SAFE config and decides whether the agent

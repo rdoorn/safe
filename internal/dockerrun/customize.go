@@ -17,11 +17,13 @@ type claudeMount struct {
 // claudeMounts is the closed list of allowed customization mounts. Adding
 // new entries is a code change on purpose: a stray .credentials.json that
 // happens to live somewhere SAFE didn't whitelist will never be mounted.
+// settings.json is NOT in this list: it's staged via a host-side copy
+// (cmd/safe/run.go) so SAFE can inject keys like skipDangerousModePermissionPrompt
+// without round-tripping through the host file.
 var claudeMounts = []claudeMount{
 	{srcRel: "skills", dstAbs: "/home/agent/.claude/skills", wantDir: true},
 	{srcRel: "commands", dstAbs: "/home/agent/.claude/commands", wantDir: true},
 	{srcRel: "CLAUDE.md", dstAbs: "/home/agent/.claude/CLAUDE.md", wantDir: false},
-	{srcRel: "settings.json", dstAbs: "/home/agent/.claude/settings.json", wantDir: false},
 	{srcRel: "statusline.sh", dstAbs: "/home/agent/.claude/statusline.sh", wantDir: false},
 	{srcRel: "hooks", dstAbs: "/home/agent/.claude/hooks", wantDir: true},
 	{srcRel: "plugins", dstAbs: "/home/agent/.claude/plugins", wantDir: true},
@@ -36,8 +38,6 @@ func gateFor(c config.Customization, m claudeMount) bool {
 		return c.Commands
 	case "CLAUDE.md":
 		return c.ClaudeMD
-	case "settings.json":
-		return c.Settings
 	case "statusline.sh":
 		return c.Statusline
 	case "hooks":
