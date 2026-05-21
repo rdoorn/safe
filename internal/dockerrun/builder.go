@@ -102,7 +102,12 @@ func BuildArgv(in Inputs) ([]string, error) { //nolint:gocyclo // unavoidable br
 		"--read-only",
 		"--tmpfs", "/tmp:rw,nosuid,nodev,noexec,size=256m",
 		"--tmpfs", "/run:rw,nosuid,nodev,noexec,size=64m",
-		"--tmpfs", "/home/agent:rw,nosuid,nodev,size=512m,uid=1000,gid=1000,mode=700",
+		// mode=755 (not 700) so safe-init (uid 0, no CAP_DAC_OVERRIDE) can
+		// traverse /home/agent to chown the .claude subdir over to agent.
+		// Files inside /home/agent are still owner-protected (claude writes
+		// .credentials.json mode 0600), so other in-container uids can list
+		// but not read contents.
+		"--tmpfs", "/home/agent:rw,nosuid,nodev,size=512m,uid=1000,gid=1000,mode=755",
 		"--tmpfs", "/var/log/safe:rw,nosuid,nodev,uid=200,gid=200,size=64m",
 		"--pids-limit", fmt.Sprintf("%d", pids),
 		"--memory", mem,
