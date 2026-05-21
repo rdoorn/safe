@@ -218,8 +218,13 @@ func stageClaudeSettings(configDir string) error {
 func authSecretSource(a config.Agent) string {
 	if a.AuthCredentialsFile != "" {
 		path := expandHome(a.AuthCredentialsFile)
-		if _, err := os.Stat(path); os.IsNotExist(err) && runtime.GOOS == "darwin" {
-			return fmt.Sprintf("macOS keychain (service %q; file %s missing)", claudeKeychainService, a.AuthCredentialsFile)
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			switch runtime.GOOS {
+			case "darwin":
+				return fmt.Sprintf("macOS keychain (service %q; file %s missing)", claudeKeychainService, a.AuthCredentialsFile)
+			case "linux":
+				return fmt.Sprintf("Linux Secret Service via secret-tool (service %q; file %s missing)", claudeKeychainService, a.AuthCredentialsFile)
+			}
 		}
 		return "credentials file " + a.AuthCredentialsFile
 	}
@@ -249,15 +254,13 @@ func loadAgent(xdgConfigDir, cwd, agentName string) (*config.Config, config.Agen
 // socket for the agent's chosen auth mode.
 //
 //   - API-key mode: returns "<key>\n" from the host env var.
-//   - OAuth mode: returns the raw JSON contents of the credentials file
-//     if present; if the file is absent on macOS, falls back to reading
-//     the equivalent blob from the host's Keychain (where the desktop
-//     claude binary now stores it by default — see "Claude Code-credentials"
-//     service entry). The blob format is identical so keyholder doesn't
-//     care which source produced it.
+//   - OAuth mode: returns the raw JSON blob in one of three forms:
+//     1. agent.AuthCredentialsFile (legacy explicit file), if present.
+//     2. macOS Keychain (service "Claude Code-credentials") on darwin.
+//     3. freedesktop Secret Service via `secret-tool` on linux.
+//     keyholder doesn't care which source provided the blob.
 //
-// In --shell mode auth is optional (no agent is running); missing
-// credentials are tolerated.
+// In --shell mode auth is optional; missing credentials are tolerated.
 func resolveAuthSecret(agent config.Agent, shell bool) ([]byte, error) {
 	switch {
 	case agent.AuthCredentialsFile != "":
@@ -272,22 +275,15 @@ func resolveAuthSecret(agent config.Agent, shell bool) ([]byte, error) {
 			}
 			return nil, fmt.Errorf("read credentials file %s: %w", path, err)
 		}
-		// File missing — try macOS Keychain.
-		if runtime.GOOS == "darwin" {
-			blob, kerr := readKeychainCredentials(claudeKeychainService)
-			if kerr == nil {
-				return blob, nil
-			}
-			if shell {
-				return nil, nil
-			}
-			return nil, fmt.Errorf("credentials file %s missing and keychain %q lookup failed: %w",
-				path, claudeKeychainService, kerr)
+		// File missing — try platform-native secret store.
+		blob, kerr := readPlatformKeychainCredentials(claudeKeychainService)
+		if kerr == nil {
+			return blob, nil
 		}
 		if shell {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("read credentials file %s: %w", path, err)
+		return nil, fmt.Errorf("credentials file %s missing and platform keychain lookup failed: %w", path, kerr)
 
 	case agent.AuthEnv != "":
 		v := os.Getenv(agent.AuthEnv)
@@ -302,14 +298,47 @@ func resolveAuthSecret(agent config.Agent, shell bool) ([]byte, error) {
 	return nil, nil
 }
 
-// claudeKeychainService is the macOS Keychain service name the desktop
-// claude binary uses for OAuth credentials. Stable as of claude-code 2.1.
+// claudeKeychainService is the service name claude uses for its OAuth
+// credentials blob on both macOS (Keychain) and Linux (Secret Service).
+// Stable as of claude-code 2.1.
 const claudeKeychainService = "Claude Code-credentials"
 
-// readKeychainCredentials shells out to `security` to retrieve the blob
-// stored at `service` in the user's login keychain. Returns the raw JSON
-// bytes (the same format keyholder expects from a credentials file).
-func readKeychainCredentials(service string) ([]byte, error) {
+// readPlatformKeychainCredentials dispatches to the platform's native
+// secret store: macOS Keychain via `security`, Linux freedesktop Secret
+// Service via `secret-tool`. Returns the raw JSON blob (same format
+// keyholder expects from a credentials file).
+func readPlatformKeychainCredentials(service string) ([]byte, error) {
+	switch runtime.GOOS {
+	case "darwin":
+		return readMacKeychain(service)
+	case "linux":
+		return readLinuxSecretService(service)
+	default:
+		return nil, fmt.Errorf("platform %s has no keychain backend; set agent.auth_credentials_file to a file path instead", runtime.GOOS)
+	}
+}
+
+// readLinuxSecretService shells out to `secret-tool` (libsecret-tools)
+// to retrieve the blob stored at `service` in the user's session
+// Secret Service (GNOME Keyring, KDE Wallet, KeePassXC via secretservice
+// integration, etc.). Returns the raw JSON bytes.
+//
+// On Debian/Ubuntu install with `apt install libsecret-tools`.
+//
+// claude stores its credentials with attribute "account"="<user>" and
+// "service"="<service>"; secret-tool's --label/--unlock semantics work
+// off attribute key/value pairs.
+func readLinuxSecretService(service string) ([]byte, error) {
+	out, err := exec.Command("secret-tool", "lookup", "service", service).Output()
+	if err != nil {
+		return nil, fmt.Errorf("secret-tool lookup service %q: %w (is libsecret-tools installed?)", service, err)
+	}
+	return bytes.TrimRight(out, "\n"), nil
+}
+
+// readMacKeychain shells out to `security` to retrieve the blob stored
+// at `service` in the user's login keychain. Returns the raw JSON bytes.
+func readMacKeychain(service string) ([]byte, error) {
 	out, err := exec.Command("security", "find-generic-password", "-s", service, "-w").Output()
 	if err != nil {
 		return nil, fmt.Errorf("security find-generic-password -s %q: %w", service, err)
