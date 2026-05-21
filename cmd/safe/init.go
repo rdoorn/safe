@@ -29,22 +29,26 @@ const initTemplate = `# SAFE configuration for this project.
 # Full schema: docs/CONFIG.md
 # Inspect merged result: safe --print-config
 #
-# Convention in this file: required and non-default fields are uncommented.
-# Optional fields at their default value are commented out so you can see
-# the full surface area without cluttering the active config.
+# Convention: required and SAFE-recommended fields are uncommented.
+# Optional fields you might want are commented out so you can see the
+# full surface area without cluttering the active config.
 
 agents:
   claude:
-    # Required: safe-runtime container image.
-    image: ghcr.io/rdoorn/safe-runtime:0.1.0
+    # Required: safe-runtime container image. Build locally with
+    # ` + "`docker buildx build -t safe-runtime:dev .`" + ` from the safe repo.
+    image: safe-runtime:dev
 
     # Required: binary the container exec's as the agent.
     entrypoint: claude
 
     # -------- Authentication: choose exactly one mode --------
     #
-    # OAuth mode (Claude.ai / Claude Enterprise). SAFE reads the
-    # credentials.json that ` + "`claude login`" + ` wrote on the host.
+    # OAuth mode (Claude.ai / Claude Enterprise). On macOS SAFE reads
+    # the token from Keychain (service "Claude Code-credentials"); on
+    # Linux from the freedesktop Secret Service via secret-tool; both
+    # fall back to ~/.claude/.credentials.json if present. Run
+    # ` + "`claude login`" + ` once on the host (outside SAFE) to populate it.
     auth_credentials_file: ~/.claude/.credentials.json
     # auth_refresh_url: https://console.anthropic.com/v1/oauth/token   # default
     #
@@ -54,7 +58,7 @@ agents:
     # auth_header: Authorization   # default
     # auth_scheme: Bearer          # default; use "" for x-api-key-style headers
 
-    # Required: upstream LLM endpoint. Host MUST be on allowlist below.
+    # Required: upstream LLM endpoint. Host MUST be on the allowlist below.
     base_url: https://api.anthropic.com
     # base_url_env: ANTHROPIC_BASE_URL    # default; env var passed to the agent
 
@@ -62,24 +66,23 @@ agents:
     # Unknown names error at config validation time.
     locked_tools: [Read, Write, Edit, Bash, Glob, Grep, NotebookEdit]
 
-    # Extra args appended to the agent's command line on every run,
-    # before any CLI args you pass after "safe claude". Useful for
-    # always-on flags like --dangerously-skip-permissions (bypasses
-    # claude's trust + per-tool permission prompts; the SAFE sandbox
-    # is the security boundary, so the prompts are mostly noise).
-    # extra_args: []
-    # extra_args:
-    #   - --dangerously-skip-permissions
+    # Always-on agent CLI flags. The SAFE sandbox is the security
+    # boundary, so claude's per-tool permission prompts are noise here.
+    # --dangerously-skip-permissions skips them. Comment out the entire
+    # block if you prefer claude to prompt before each Bash/Edit/etc.
+    extra_args:
+      - --dangerously-skip-permissions
 
-    # Per-project language-runtime versions. SAFE provisions these on
-    # first run into <cwd>/.safe/tools/, then reuses on subsequent runs.
-    # Exact pinned versions only (no ranges). Comment out if you want
-    # to use whatever ships in the image.
+    # Per-project language-runtime versions. SAFE invokes pyenv/fnm on
+    # first run, stashing the install in <cwd>/.safe/tools/{python,node}/
+    # and reusing it on subsequent runs. Exact versions only (no ranges).
+    # Uncomment if you need a specific Python/Node; otherwise the image's
+    # Debian defaults are used.
     #
     # NOTE: there is no "tools.go" field. Go pins its own toolchain
-    # natively via the "toolchain goX.Y.Z" directive in your go.mod;
-    # the Go binary auto-downloads matching toolchains (cached on the
-    # persistent project volume). See go.dev/doc/toolchain.
+    # natively via the "toolchain goX.Y.Z" directive in go.mod; Go
+    # auto-downloads matching toolchains (cached on the persistent
+    # project volume). See go.dev/doc/toolchain.
     # tools:
     #   python: "3.14.0"
     #   node: "22.10.0"
@@ -89,35 +92,39 @@ agents:
       DISABLE_TELEMETRY: "1"
       CLAUDE_CODE_DISABLE_AUTOUPDATER: "1"
 
-    # Opt-in read-only bind-mounts of subdirs under ~/.claude on the host.
-    # Defaults below match SAFE's recommended posture: safe (markdown)
-    # things on, executable/script-bearing things off.
+    # Read-only state from your host ~/.claude bind-mounted or staged
+    # into the container. SAFE's recommended posture: markdown/config on,
+    # executable-bearing items off unless you trust your host's content.
     customization:
-      skills: true       # default
-      commands: true     # default
-      claudemd: true     # default
-      settings: true     # default; ~/.claude/settings.json (RO)
-      state: true        # default; ~/.claude.json (RO) — has theme prefs
-      # statusline: false # default; executable runs as agent uid
-      # hooks: false      # default; scripts run as agent uid
-      # plugins: false    # default
+      skills: true       # bind-mount ~/.claude/skills (RO)
+      commands: true     # bind-mount ~/.claude/commands (RO)
+      claudemd: true     # stage ~/.claude/CLAUDE.md (SAFE prepends a sandbox-policy preamble)
+      settings: true     # stage ~/.claude/settings.json (SAFE injects safety defaults)
+      state: true        # stage ~/.claude.json (theme, trust, project history)
+      statusline: true   # bind-mount ~/.claude/statusline.sh; runs as agent uid in container
+      # hooks: false     # OPT-IN: ~/.claude/hooks/ scripts exec on hook events as agent uid
+      # plugins: false   # OPT-IN: ~/.claude/plugins/ can run arbitrary code
 
 # FQDNs the agent is allowed to reach. Anything else returns NXDOMAIN.
 # Edit this list for your project's API endpoints.
 allowlist:
   - api.anthropic.com
-  - console.anthropic.com    # OAuth token refresh; remove if using API-key mode
-  - registry.npmjs.org
-  - pypi.org
-  - files.pythonhosted.org
-  - proxy.golang.org
-  - sum.golang.org
-  - deb.debian.org
-  # Required if you use the "tools:" block to provision pyenv/fnm versions:
-  - www.python.org           # pyenv install source tarballs
-  - nodejs.org               # fnm install prebuilt node tarballs
-  - github.com               # fnm pulls from Schniz/fnm releases on GH
-  - objects.githubusercontent.com  # GH releases CDN
+  - console.anthropic.com          # OAuth token refresh; remove if API-key mode
+  - platform.claude.com            # claude session/heartbeat API
+  - downloads.claude.ai            # claude code update channel
+  - raw.githubusercontent.com      # claude marketplace / plugin metadata
+  - registry.npmjs.org             # pnpm registry
+  - pypi.org                       # python packages
+  - files.pythonhosted.org         # pypi CDN
+  - proxy.golang.org               # go modules + auto-toolchains
+  - sum.golang.org                 # go checksum DB
+  - deb.debian.org                 # used at image build (safe to keep at runtime)
+  # Uncomment these only if you use the "tools:" block to provision
+  # pyenv/fnm versions on first run:
+  # - www.python.org               # pyenv source tarballs
+  # - nodejs.org                   # fnm prebuilt node tarballs
+  # - github.com                   # fnm pulls from Schniz/fnm GH releases
+  # - objects.githubusercontent.com  # GH releases CDN
 
 # Upstream DNS resolvers safe-dns forwards allowed queries to. Reachable
 # only by the firewall uid (200) inside the container.

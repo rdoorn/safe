@@ -41,7 +41,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # project use; fnm needs unzip to extract its downloads.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates nftables iproute2 procps \
-      git curl wget jq make unzip xz-utils \
+      git curl wget jq yq make unzip xz-utils \
       build-essential libcap2-bin \
       python3 python3-pip python3-venv \
       nodejs npm \
