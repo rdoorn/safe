@@ -261,26 +261,33 @@ func startUserProcess(bin string, args []string, uid, gid uint32, stdin []byte) 
 
 // stageClaudeState copies the host-staged claude-state.json (delivered
 // inside the /etc/safe bind mount) into the agent's writable home at
-// /home/agent/.claude.json, with owner agent:agent and mode 0600. This
+// /home/agent/.claude.json with owner agent:agent and mode 0600. This
 // is how SAFE seeds claude's per-user state (theme prefs, trust list,
 // etc.) without giving the agent write access to the host file.
+//
+// The write is done by forking a /bin/sh as uid 1000 because safe-init
+// (uid 0) doesn't have CAP_DAC_OVERRIDE — and /home/agent is mode 755
+// owned by uid 1000, so uid 0 only has r-x on it. The agent uid IS the
+// owner and can write freely; we let it do the write for us.
 //
 // A missing source is not an error — claude just starts fresh.
 func stageClaudeState() error {
 	const src = "/etc/safe/claude-state.json"
 	const dst = "/home/agent/.claude.json"
-	data, err := os.ReadFile(src)
-	if err != nil {
+	if _, err := os.Stat(src); err != nil {
 		if os.IsNotExist(err) {
 			return nil
 		}
-		return fmt.Errorf("read %s: %w", src, err)
+		return fmt.Errorf("stat %s: %w", src, err)
 	}
-	if err := os.WriteFile(dst, data, 0o600); err != nil {
-		return fmt.Errorf("write %s: %w", dst, err)
+	cmd := exec.Command("/bin/sh", "-c", "umask 077 && cat "+src+" > "+dst) //nolint:gosec // src and dst are constants
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Credential: &syscall.Credential{Uid: defaultAgentUID, Gid: defaultAgentGID, NoSetGroups: true},
 	}
-	if err := os.Chown(dst, int(defaultAgentUID), int(defaultAgentGID)); err != nil {
-		return fmt.Errorf("chown %s: %w", dst, err)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("stage as agent uid: %w", err)
 	}
 	return nil
 }
