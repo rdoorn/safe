@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -111,22 +112,57 @@ func runAgent(ctx context.Context, stdout, stderr io.Writer, xdgConfigDir, cwd, 
 // update it freely — but those updates only live for this container's
 // lifetime (next session reads fresh from host).
 //
-// A missing host file is not an error: claude will just start fresh.
+// Two keys are injected unconditionally so claude doesn't re-prompt
+// every session for things SAFE has implicitly approved:
+//   - projects["/workspace"].hasTrustDialogAccepted = true:
+//     /workspace is the canonical bind-mount of the host's project dir,
+//     and the user already opted in by running `safe claude`.
+//   - bypassPermissionsModeAccepted = true:
+//     the SAFE sandbox IS the security boundary; --dangerously-skip-
+//     permissions makes sense inside the container regardless of whether
+//     the user accepts it through claude's UI.
+//
+// A missing host file is not an error: we synthesize a minimal one with
+// just the injected keys.
 func stageClaudeState(configDir string) error {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Errorf("user home: %w", err)
 	}
 	src := filepath.Join(home, ".claude.json")
+	var state map[string]any
 	data, err := os.ReadFile(src) //nolint:gosec // path is the user's own home
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
+	switch {
+	case err == nil:
+		if err := json.Unmarshal(data, &state); err != nil {
+			return fmt.Errorf("parse %s: %w", src, err)
 		}
+	case os.IsNotExist(err):
+		state = map[string]any{}
+	default:
 		return fmt.Errorf("read %s: %w", src, err)
 	}
+
+	state["bypassPermissionsModeAccepted"] = true
+
+	projects, _ := state["projects"].(map[string]any)
+	if projects == nil {
+		projects = map[string]any{}
+	}
+	ws, _ := projects["/workspace"].(map[string]any)
+	if ws == nil {
+		ws = map[string]any{}
+	}
+	ws["hasTrustDialogAccepted"] = true
+	projects["/workspace"] = ws
+	state["projects"] = projects
+
+	out, err := json.Marshal(state)
+	if err != nil {
+		return fmt.Errorf("marshal staged state: %w", err)
+	}
 	dst := filepath.Join(configDir, "claude-state.json")
-	if err := os.WriteFile(dst, data, 0o644); err != nil { //nolint:gosec // public to in-container uids; safe-init copies to agent home
+	if err := os.WriteFile(dst, out, 0o644); err != nil { //nolint:gosec // public to in-container uids; safe-init copies to agent home
 		return fmt.Errorf("write %s: %w", dst, err)
 	}
 	return nil
