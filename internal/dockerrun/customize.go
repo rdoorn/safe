@@ -1,8 +1,11 @@
 package dockerrun
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 
 	"github.com/rdoorn/safe/internal/config"
 )
@@ -21,14 +24,14 @@ type claudeMount struct {
 // host-side copies (cmd/safe/run.go) so SAFE can inject content
 // (skipDangerousModePermissionPrompt for settings, sandbox-policy
 // preamble for CLAUDE.md) without round-tripping through the host file.
+//
+// The statusline script (whatever filename the user picked) is also
+// NOT here. ExpandStatuslineMounts parses settings.json's
+// statusLine.command field and mounts the referenced ~/.claude/*
+// path(s) dynamically — see that function.
 var claudeMounts = []claudeMount{
 	{srcRel: "skills", dstAbs: "/home/agent/.claude/skills", wantDir: true},
 	{srcRel: "commands", dstAbs: "/home/agent/.claude/commands", wantDir: true},
-	// claude's statusline command is whatever the user references in
-	// settings.json. We mount both common filenames; whichever exists on
-	// the host is bind-mounted (ExpandMounts skips missing sources).
-	{srcRel: "statusline.sh", dstAbs: "/home/agent/.claude/statusline.sh", wantDir: false},
-	{srcRel: "statusline-command.sh", dstAbs: "/home/agent/.claude/statusline-command.sh", wantDir: false},
 	{srcRel: "hooks", dstAbs: "/home/agent/.claude/hooks", wantDir: true},
 	{srcRel: "plugins", dstAbs: "/home/agent/.claude/plugins", wantDir: true},
 }
@@ -40,8 +43,6 @@ func gateFor(c config.Customization, m claudeMount) bool {
 		return c.Skills
 	case "commands":
 		return c.Commands
-	case "statusline.sh", "statusline-command.sh":
-		return c.Statusline
 	case "hooks":
 		return c.Hooks
 	case "plugins":
@@ -70,6 +71,61 @@ func ExpandMounts(claudeDir string, c config.Customization) []string {
 			continue
 		}
 		out = append(out, "-v", src+":"+m.dstAbs+":ro")
+	}
+	return out
+}
+
+// statuslineTokenRE matches `~/.claude/<path>` tokens inside a free-form
+// shell command. We deliberately require the `~/.claude/` prefix so we
+// don't accidentally mount paths the user typed for other reasons.
+// Stops at whitespace or shell quote chars.
+var statuslineTokenRE = regexp.MustCompile(`~/\.claude/[^\s'"` + "`" + `;|&]+`)
+
+// ExpandStatuslineMounts reads the host's ~/.claude/settings.json,
+// parses settings.statusLine.command (a free-form shell command), and
+// returns bind-mount flags for every `~/.claude/<path>` referenced
+// there. claude's statusline script can have any filename the user
+// picked, so the only authoritative source is what settings.json says.
+//
+// Gated on Customization.Statusline — if false, returns nil even if
+// the user has a statusLine block in settings.
+//
+// Mounts are read-only. Sources that don't exist on the host are
+// silently skipped (matches ExpandMounts's behavior).
+func ExpandStatuslineMounts(claudeDir string, c config.Customization) []string {
+	if !c.Statusline {
+		return nil
+	}
+	data, err := os.ReadFile(filepath.Join(claudeDir, "settings.json")) //nolint:gosec // user's own home
+	if err != nil {
+		return nil
+	}
+	var settings struct {
+		StatusLine struct {
+			Command string `json:"command"`
+		} `json:"statusLine"`
+	}
+	if err := json.Unmarshal(data, &settings); err != nil {
+		return nil
+	}
+	cmd := settings.StatusLine.Command
+	if cmd == "" {
+		return nil
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, tok := range statuslineTokenRE.FindAllString(cmd, -1) {
+		if seen[tok] {
+			continue
+		}
+		seen[tok] = true
+		rel := strings.TrimPrefix(tok, "~/.claude/")
+		src := filepath.Join(claudeDir, rel)
+		if _, err := os.Stat(src); err != nil {
+			continue
+		}
+		dst := "/home/agent/.claude/" + rel
+		out = append(out, "-v", src+":"+dst+":ro")
 	}
 	return out
 }

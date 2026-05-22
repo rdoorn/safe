@@ -87,3 +87,64 @@ func flagsAsString(flags []string) string {
 	}
 	return s
 }
+
+func TestExpandStatuslineMountsFromSettings(t *testing.T) {
+	home := t.TempDir()
+	claudeDir := filepath.Join(home, ".claude")
+	require.NoError(t, os.MkdirAll(claudeDir, 0o700))
+	writeFile(t, filepath.Join(claudeDir, "settings.json"),
+		`{"statusLine":{"type":"command","command":"sh ~/.claude/statusline-command.sh"}}`)
+	writeFile(t, filepath.Join(claudeDir, "statusline-command.sh"), "#!/bin/sh\necho hi\n")
+
+	flags := dockerrun.ExpandStatuslineMounts(claudeDir, config.Customization{Statusline: true})
+	require.Contains(t, flagsAsString(flags),
+		filepath.Join(claudeDir, "statusline-command.sh")+":/home/agent/.claude/statusline-command.sh:ro")
+}
+
+func TestExpandStatuslineMountsAlternateFilename(t *testing.T) {
+	home := t.TempDir()
+	claudeDir := filepath.Join(home, ".claude")
+	require.NoError(t, os.MkdirAll(claudeDir, 0o700))
+	writeFile(t, filepath.Join(claudeDir, "settings.json"),
+		`{"statusLine":{"command":"~/.claude/my-custom-bar.sh"}}`)
+	writeFile(t, filepath.Join(claudeDir, "my-custom-bar.sh"), "#!/bin/sh\n")
+
+	flags := dockerrun.ExpandStatuslineMounts(claudeDir, config.Customization{Statusline: true})
+	require.Contains(t, flagsAsString(flags), "my-custom-bar.sh:/home/agent/.claude/my-custom-bar.sh:ro")
+}
+
+func TestExpandStatuslineMountsSkipsWhenDisabled(t *testing.T) {
+	home := t.TempDir()
+	claudeDir := filepath.Join(home, ".claude")
+	require.NoError(t, os.MkdirAll(claudeDir, 0o700))
+	writeFile(t, filepath.Join(claudeDir, "settings.json"),
+		`{"statusLine":{"command":"sh ~/.claude/statusline-command.sh"}}`)
+	writeFile(t, filepath.Join(claudeDir, "statusline-command.sh"), "#!/bin/sh\n")
+
+	flags := dockerrun.ExpandStatuslineMounts(claudeDir, config.Customization{Statusline: false})
+	require.Empty(t, flags, "Statusline=false must not mount anything")
+}
+
+func TestExpandStatuslineMountsSkipsMissingFile(t *testing.T) {
+	home := t.TempDir()
+	claudeDir := filepath.Join(home, ".claude")
+	require.NoError(t, os.MkdirAll(claudeDir, 0o700))
+	// settings references a script that doesn't exist on host
+	writeFile(t, filepath.Join(claudeDir, "settings.json"),
+		`{"statusLine":{"command":"sh ~/.claude/does-not-exist.sh"}}`)
+
+	flags := dockerrun.ExpandStatuslineMounts(claudeDir, config.Customization{Statusline: true})
+	require.Empty(t, flags, "missing script must be silently skipped")
+}
+
+func TestExpandStatuslineMountsIgnoresNonClaudePaths(t *testing.T) {
+	home := t.TempDir()
+	claudeDir := filepath.Join(home, ".claude")
+	require.NoError(t, os.MkdirAll(claudeDir, 0o700))
+	// Absolute path outside ~/.claude — SAFE should not try to mount it.
+	writeFile(t, filepath.Join(claudeDir, "settings.json"),
+		`{"statusLine":{"command":"/usr/local/bin/my-bar"}}`)
+
+	flags := dockerrun.ExpandStatuslineMounts(claudeDir, config.Customization{Statusline: true})
+	require.Empty(t, flags, "non-~/.claude paths must be ignored")
+}

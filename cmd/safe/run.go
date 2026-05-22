@@ -449,6 +449,10 @@ func buildDockerArgv(merged *config.Config, agent config.Agent, agentName string
 	homeDir, _ := os.UserHomeDir()
 	claudeDir := filepath.Join(homeDir, ".claude")
 	mountFlags := dockerrun.ExpandMounts(claudeDir, agent.Customization)
+	// Statusline command is free-form in settings.json. Parse the
+	// command and mount whichever ~/.claude/<path> tokens it
+	// references — see ExpandStatuslineMounts.
+	mountFlags = append(mountFlags, dockerrun.ExpandStatuslineMounts(claudeDir, agent.Customization)...)
 
 	// Prepend agent.ExtraArgs so user-supplied CLI args come last and
 	// can override (most flag parsers honor last-wins). Shell mode
