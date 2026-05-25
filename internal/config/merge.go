@@ -31,6 +31,7 @@ func Merge(base, overlay *Config) *Config {
 		EnvPassthrough: appendStrings(base.EnvPassthrough, overlay.EnvPassthrough),
 		Resources:      mergeResources(base.Resources, overlay.Resources),
 		Audit:          mergeAudit(base.Audit, overlay.Audit),
+		RTK:            mergeRTK(base.RTK, overlay.RTK),
 	}
 	return out
 }
@@ -144,4 +145,11 @@ func mergeAudit(base, overlay Audit) Audit {
 		out.HostPath = overlay.HostPath
 	}
 	return out
+}
+
+func mergeRTK(base, overlay RTK) RTK {
+	if overlay.Enabled != nil {
+		return RTK{Enabled: overlay.Enabled}
+	}
+	return base
 }

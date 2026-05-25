@@ -23,6 +23,7 @@ type Config struct {
 	ExtraCaps      []string         `yaml:"extra_caps"`
 	Resources      Resources        `yaml:"resources"`
 	Audit          Audit            `yaml:"audit"`
+	RTK            RTK              `yaml:"rtk"`
 }
 
 // Agent is the registry entry for one supported agent (e.g. claude, opencode).
@@ -97,6 +98,19 @@ type Resources struct {
 type Audit struct {
 	Enabled  bool   `yaml:"enabled"`
 	HostPath string `yaml:"host_path"`
+}
+
+// RTK controls whether RTK (Rust Token Killer) is enabled for the agent.
+// RTK reduces LLM token consumption by filtering command output.
+// Defaults to enabled when absent.
+type RTK struct {
+	Enabled *bool `yaml:"enabled"`
+}
+
+// IsEnabled returns true when RTK is active. Nil (absent from config) means
+// enabled — RTK is opt-out, not opt-in.
+func (r RTK) IsEnabled() bool {
+	return r.Enabled == nil || *r.Enabled
 }
 
 // Parse decodes YAML bytes into a Config.

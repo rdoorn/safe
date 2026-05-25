@@ -125,6 +125,23 @@ func TestMergeNilInputs(t *testing.T) {
 	})
 }
 
+func TestMergeRTKOverlayDisables(t *testing.T) {
+	yes := true
+	no := false
+	base := &config.Config{RTK: config.RTK{Enabled: &yes}}
+	overlay := &config.Config{RTK: config.RTK{Enabled: &no}}
+	out := config.Merge(base, overlay)
+	require.False(t, out.RTK.IsEnabled())
+}
+
+func TestMergeRTKOverlayAbsentPreservesBase(t *testing.T) {
+	yes := true
+	base := &config.Config{RTK: config.RTK{Enabled: &yes}}
+	overlay := &config.Config{}
+	out := config.Merge(base, overlay)
+	require.True(t, out.RTK.IsEnabled())
+}
+
 func TestMergeChainViaLoadAll(t *testing.T) {
 	got := config.MergeAll([]*config.Config{
 		{Allowlist: []string{"a"}},

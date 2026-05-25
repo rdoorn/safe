@@ -42,6 +42,61 @@ func TestParseInvalidYAML(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestParseRTKEnabled(t *testing.T) {
+	src := `
+agents:
+  claude:
+    image: x
+    entrypoint: claude
+    auth_env: ANTHROPIC_API_KEY
+    base_url: https://api.anthropic.com
+    locked_tools: [Read]
+allowlist: [api.anthropic.com]
+upstream_dns: [1.1.1.1]
+rtk:
+  enabled: true
+`
+	cfg, err := config.Parse([]byte(src))
+	require.NoError(t, err)
+	require.True(t, cfg.RTK.IsEnabled())
+}
+
+func TestParseRTKDisabled(t *testing.T) {
+	src := `
+agents:
+  claude:
+    image: x
+    entrypoint: claude
+    auth_env: ANTHROPIC_API_KEY
+    base_url: https://api.anthropic.com
+    locked_tools: [Read]
+allowlist: [api.anthropic.com]
+upstream_dns: [1.1.1.1]
+rtk:
+  enabled: false
+`
+	cfg, err := config.Parse([]byte(src))
+	require.NoError(t, err)
+	require.False(t, cfg.RTK.IsEnabled())
+}
+
+func TestParseRTKAbsentDefaultsToEnabled(t *testing.T) {
+	src := `
+agents:
+  claude:
+    image: x
+    entrypoint: claude
+    auth_env: ANTHROPIC_API_KEY
+    base_url: https://api.anthropic.com
+    locked_tools: [Read]
+allowlist: [api.anthropic.com]
+upstream_dns: [1.1.1.1]
+`
+	cfg, err := config.Parse([]byte(src))
+	require.NoError(t, err)
+	require.True(t, cfg.RTK.IsEnabled(), "absent rtk block must default to enabled")
+}
+
 func TestParseCustomization(t *testing.T) {
 	src := `
 agents:
