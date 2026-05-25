@@ -82,6 +82,11 @@ func run(agentName string, agentArgs []string) error { //nolint:gocyclo // linea
 		fmt.Fprintf(os.Stderr, "safe-init: stage=%d %s\n", stage, msg)
 	}
 
+	cfg, err := config.LoadFile(configPath)
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+
 	// Bootstrap secret MUST be received first — even before hidepid and
 	// the chown block. Docker exposes the host port mapping as soon as
 	// the container starts; if the host CLI's PipeKey connects and
@@ -93,7 +98,7 @@ func run(agentName string, agentArgs []string) error { //nolint:gocyclo // linea
 	if keyholderEnabled {
 		logStage(0, "read bootstrap secret (FIRST; before any other work)")
 		var ferr error
-		authMode, ferr = resolveAuthMode(agentName)
+		authMode, ferr = resolveAuthMode(cfg, agentName)
 		if ferr != nil {
 			return fmt.Errorf("determine auth mode: %w", ferr)
 		}
@@ -379,13 +384,9 @@ func stageClaudeState() error {
 	return stageAsAgent("/etc/safe/claude-state.json", "/home/agent/.claude.json")
 }
 
-// resolveAuthMode reads the SAFE config and decides whether the agent
-// uses a static API key or OAuth credentials.
-func resolveAuthMode(agentName string) (string, error) {
-	cfg, err := config.LoadFile(configPath)
-	if err != nil {
-		return "", err
-	}
+// resolveAuthMode inspects the agent config to decide whether it uses
+// a static API key or OAuth credentials.
+func resolveAuthMode(cfg *config.Config, agentName string) (string, error) {
 	a, ok := cfg.Agents[agentName]
 	if !ok {
 		return "", fmt.Errorf("agent %q not in config", agentName)
