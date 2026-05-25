@@ -165,7 +165,7 @@ func run(agentName string, agentArgs []string) error { //nolint:gocyclo // linea
 	// Provision per-project language versions (pyenv/fnm). Bind-mount
 	// dirs already exist; if user requested specific versions in
 	// safe.yaml's tools block, install them (no-op if already present).
-	if err := ensureProjectTools(agentName); err != nil {
+	if err := ensureProjectTools(agentName, cfg); err != nil {
 		fmt.Fprintln(os.Stderr, "safe-init: tool provisioning skipped:", err)
 	}
 

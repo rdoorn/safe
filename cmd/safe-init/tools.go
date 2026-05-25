@@ -22,11 +22,7 @@ import (
 //
 // A missing version field is not an error: SAFE just doesn't provision
 // that runtime. Users can rely on whatever ships in the image.
-func ensureProjectTools(agentName string) error {
-	cfg, err := config.LoadFile(configPath)
-	if err != nil {
-		return fmt.Errorf("load config: %w", err)
-	}
+func ensureProjectTools(agentName string, cfg *config.Config) error {
 	a, ok := cfg.Agents[agentName]
 	if !ok {
 		return nil
