@@ -34,3 +34,15 @@ func TestResolveAuthModeUnknownAgent(t *testing.T) {
 	_, err := resolveAuthMode(cfg, "unknown")
 	require.Error(t, err)
 }
+
+func TestAgentEnvRTKTelemetryPresent(t *testing.T) {
+	env := agentEnv([]string{}, true)
+	require.Contains(t, env, "RTK_TELEMETRY_DISABLED=1")
+}
+
+func TestAgentEnvRTKTelemetryAbsentWhenDisabled(t *testing.T) {
+	env := agentEnv([]string{}, false)
+	for _, e := range env {
+		require.NotEqual(t, "RTK_TELEMETRY_DISABLED=1", e)
+	}
+}

@@ -195,6 +195,16 @@ func run(agentName string, agentArgs []string) error { //nolint:gocyclo // linea
 		logStage(5, fmt.Sprintf("SKIPPED safe-keyholder (mode=%s)", authMode))
 	}
 
+	// RTK token optimiser: run `rtk init -g` as agent uid so it can write
+	// the Claude Code hook into /home/agent/.claude/settings.json.
+	// Runs after stageClaudeSettings so RTK merges into any staged file.
+	rtkEnabled := cfg.RTK.IsEnabled()
+	if rtkEnabled {
+		initRTK(rtkBin)
+	} else {
+		fmt.Fprintln(os.Stderr, "safe-init: rtk: disabled")
+	}
+
 	// Tighten the bounding set BEFORE spawning the agent so anything the
 	// agent execs can never gain these caps via file caps or setuid bits.
 	// safe-dns / safe-keyholder are already running and unaffected. See
@@ -208,7 +218,7 @@ func run(agentName string, agentArgs []string) error { //nolint:gocyclo // linea
 	// agent runs in its own credential via SysProcAttr.
 	agentBin := resolveAgentPath(agentName)
 	logStage(6, fmt.Sprintf("spawn agent: bin=%s args=%v uid=%d", agentBin, agentArgs, defaultAgentUID))
-	agentCmd, err := startAgent(agentBin, agentArgs, defaultAgentUID, defaultAgentGID)
+	agentCmd, err := startAgent(agentBin, agentArgs, defaultAgentUID, defaultAgentGID, rtkEnabled)
 	if err != nil {
 		return fmt.Errorf("start agent: %w", err)
 	}
@@ -242,12 +252,12 @@ func runSafeFW() error {
 // sets the uid/gid — the env is inherited from safe-init (root), so
 // without this the child sees HOME=/root and tries to read/write its
 // config under /root (which is on the read-only rootfs).
-func startAgent(bin string, args []string, uid, gid uint32) (*exec.Cmd, error) {
+func startAgent(bin string, args []string, uid, gid uint32, rtkEnabled bool) (*exec.Cmd, error) {
 	cmd := exec.Command(bin, args...) //nolint:gosec // bin/args derived from validated config + PATH lookup
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	cmd.Env = agentEnv(os.Environ())
+	cmd.Env = agentEnv(os.Environ(), rtkEnabled)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Credential: &syscall.Credential{Uid: uid, Gid: gid, NoSetGroups: true},
 	}
@@ -258,8 +268,10 @@ func startAgent(bin string, args []string, uid, gid uint32) (*exec.Cmd, error) {
 }
 
 // agentEnv returns parent's env with HOME/USER/LOGNAME replaced to
-// point at the agent uid's home/account inside the image.
-func agentEnv(parent []string) []string {
+// point at the agent uid's home/account inside the image. When
+// rtkEnabled is true, RTK_TELEMETRY_DISABLED=1 is appended so the RTK
+// Claude Code hook does not send telemetry.
+func agentEnv(parent []string, rtkEnabled bool) []string {
 	filtered := parent[:0:0]
 	for _, e := range parent {
 		switch {
@@ -271,7 +283,7 @@ func agentEnv(parent []string) []string {
 			filtered = append(filtered, e)
 		}
 	}
-	return append(filtered,
+	out := append(filtered,
 		"HOME=/home/agent",
 		"USER=agent",
 		"LOGNAME=agent",
@@ -301,6 +313,10 @@ func agentEnv(parent []string) []string {
 		"FNM_DIR=/opt/fnm",
 		"PATH=/opt/pyenv/shims:/opt/pyenv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
 	)
+	if rtkEnabled {
+		out = append(out, "RTK_TELEMETRY_DISABLED=1")
+	}
+	return out
 }
 
 // startUserProcess spawns a background daemon as the given uid/gid, with
