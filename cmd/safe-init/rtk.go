@@ -7,6 +7,10 @@ import (
 	"syscall"
 )
 
+// rtkTelemetryEnv is set in both the rtk init subprocess and the agent process
+// so that RTK never attempts telemetry calls (the container is firewalled).
+const rtkTelemetryEnv = "RTK_TELEMETRY_DISABLED=1"
+
 // initRTK runs `rtk init -g` as the agent uid so RTK can write its
 // Claude Code PreToolUse hook into /home/agent/.claude/settings.json.
 // RTK manages its own merge logic; if settings.json already exists (from
@@ -25,7 +29,7 @@ func initRTK(binPath string) {
 	cmd.Stderr = os.Stderr
 	cmd.Env = []string{
 		"HOME=/home/agent",
-		"RTK_TELEMETRY_DISABLED=1",
+		rtkTelemetryEnv,
 		"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
 	}
 	if os.Getuid() == 0 {

@@ -314,7 +314,7 @@ func agentEnv(parent []string, rtkEnabled bool) []string {
 		"PATH=/opt/pyenv/shims:/opt/pyenv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
 	)
 	if rtkEnabled {
-		out = append(out, "RTK_TELEMETRY_DISABLED=1")
+		out = append(out, rtkTelemetryEnv)
 	}
 	return out
 }
