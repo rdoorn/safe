@@ -87,12 +87,7 @@ Controls the in-container [RTK](https://github.com/rtk-ai/rtk) token optimiser.
 
 Telemetry is unconditionally disabled (the container is firewalled; outbound connections to RTK telemetry endpoints would be dropped by nftables regardless).
 
-To tune RTK's behaviour (excluded commands, tee mode, etc.), mount your `~/.config/rtk/config.toml` into the container:
-
-```yaml
-mounts:
-  - ~/.config/rtk/config.toml:/home/agent/.config/rtk/config.toml:ro
-```
+To tune RTK's behaviour (excluded commands, tee mode, etc.), place your `~/.config/rtk/config.toml` in a custom image layer. The `mounts:` top-level field is not yet wired up for arbitrary host paths; opt-in extra mounts will be supported in a future release.
 
 ### Agent
 
