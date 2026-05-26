@@ -78,6 +78,7 @@ RUN npm install -g pnpm@${PNPM_VERSION}
 # Pin per the "at least 7 days old" rule. v0.40.0 released 2026-05-13 (12d old).
 # Assets: rtk-x86_64-unknown-linux-musl.tar.gz (amd64, static musl)
 #         rtk-aarch64-unknown-linux-gnu.tar.gz  (arm64, dynamic gnu)
+# Tarball root contains a single `rtk` binary (verified: tar -tz on both assets).
 ARG RTK_VERSION=v0.40.0
 RUN set -eux; \
     case "${TARGETARCH:-amd64}" in \
