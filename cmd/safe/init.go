@@ -157,6 +157,11 @@ env_passthrough: [TERM, LANG, TZ]
 audit:
   enabled: true
   host_path: ~/.local/share/safe/audit.log
+
+# RTK token optimiser: reduces LLM token consumption 60-90% by filtering
+# Bash command output. Enabled by default. Disable if you need raw output.
+rtk:
+  enabled: true
 `
 
 // runInit writes a default safe.yaml under <cwd>/.safe/ and ensures the

@@ -55,6 +55,9 @@ resources:
 audit:
   enabled: true
   host_path: ~/.local/share/safe/audit.log
+
+rtk:
+  enabled: true
 ```
 
 ## Schema
@@ -72,6 +75,24 @@ audit:
 | `resources.pids` | int | no | `256` | Docker `--pids-limit`. |
 | `audit.enabled` | bool | no | `true` | Whether safe-dns writes the JSONL audit log. |
 | `audit.host_path` | string | no | `~/.local/share/safe/audit.log` | Host path mounted as the audit destination (planned). |
+| `rtk.enabled` | bool | no | `true` | Run `rtk init -g` at startup and set `RTK_TELEMETRY_DISABLED=1` in the agent env. |
+
+### `rtk`
+
+Controls the in-container [RTK](https://github.com/rtk-ai/rtk) token optimiser.
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `enabled` | bool | `true` | Run `rtk init -g` at startup and set `RTK_TELEMETRY_DISABLED=1` in the agent env. RTK intercepts Bash command output and compresses it 60–90% before it reaches the LLM. |
+
+Telemetry is unconditionally disabled (the container is firewalled; outbound connections to RTK telemetry endpoints would be dropped by nftables regardless).
+
+To tune RTK's behaviour (excluded commands, tee mode, etc.), mount your `~/.config/rtk/config.toml` into the container:
+
+```yaml
+mounts:
+  - ~/.config/rtk/config.toml:/home/agent/.config/rtk/config.toml:ro
+```
 
 ### Agent
 
