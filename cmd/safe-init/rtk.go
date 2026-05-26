@@ -7,12 +7,14 @@ import (
 	"syscall"
 )
 
-const rtkBin = "/usr/local/bin/rtk"
-
 // initRTK runs `rtk init -g` as the agent uid so RTK can write its
 // Claude Code PreToolUse hook into /home/agent/.claude/settings.json.
 // RTK manages its own merge logic; if settings.json already exists (from
 // a customization.settings mount) RTK merges into it.
+//
+// When running as root (the normal container case), the child is exec'd
+// as uid 1000/gid 1000. When not root (developer test runs), credentials
+// are not set and the child inherits the caller's uid.
 //
 // A non-zero exit is logged as a warning and does not abort startup —
 // the agent starts regardless, just without RTK's hook.

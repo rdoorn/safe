@@ -45,6 +45,7 @@ const (
 	safeFW                 = "/usr/sbin/safe-fw"
 	safeDNS                = "/usr/sbin/safe-dns"
 	safeKeyholder          = "/usr/sbin/safe-keyholder"
+	rtkBin                 = "/usr/local/bin/rtk"
 	agentClaudeDir         = "/home/agent/.claude"
 	agentClaudeProjectsDir = "/home/agent/.claude/projects"
 	agentCacheDir          = "/home/agent/.cache"
