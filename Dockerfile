@@ -74,6 +74,27 @@ RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
 ARG PNPM_VERSION=9.15.0
 RUN npm install -g pnpm@${PNPM_VERSION}
 
+# --- RTK: Rust Token Killer (token-efficient command output for LLM agents) ---
+# Pin per the "at least 7 days old" rule. v0.40.0 released 2026-05-13 (12d old).
+# Assets: rtk-x86_64-unknown-linux-musl.tar.gz (amd64, static musl)
+#         rtk-aarch64-unknown-linux-gnu.tar.gz  (arm64, dynamic gnu)
+ARG RTK_VERSION=v0.40.0
+RUN set -eux; \
+    case "${TARGETARCH:-amd64}" in \
+      amd64) RTK_TARBALL=rtk-x86_64-unknown-linux-musl.tar.gz ;; \
+      arm64) RTK_TARBALL=rtk-aarch64-unknown-linux-gnu.tar.gz ;; \
+      *) echo "unsupported TARGETARCH: ${TARGETARCH}"; exit 1 ;; \
+    esac; \
+    mkdir -p /tmp/rtk-extract; \
+    curl -fsSL "https://github.com/rtk-ai/rtk/releases/download/${RTK_VERSION}/${RTK_TARBALL}" \
+      -o "/tmp/rtk-extract/${RTK_TARBALL}"; \
+    curl -fsSL "https://github.com/rtk-ai/rtk/releases/download/${RTK_VERSION}/checksums.txt" \
+      -o /tmp/rtk-extract/checksums.txt; \
+    cd /tmp/rtk-extract && grep "${RTK_TARBALL}" checksums.txt | sha256sum -c -; \
+    tar -xzf "/tmp/rtk-extract/${RTK_TARBALL}" -C /tmp/rtk-extract; \
+    install -m0755 /tmp/rtk-extract/rtk /usr/local/bin/rtk; \
+    rm -rf /tmp/rtk-extract
+
 # --- pyenv: per-project Python versions ---
 # Lives at /opt/pyenv (rootfs, read-only at runtime). Installed Python
 # versions go to /opt/pyenv/versions, which SAFE bind-mounts from the
