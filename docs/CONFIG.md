@@ -46,7 +46,8 @@ upstream_dns:
   - 1.0.0.1
 
 mounts: []                      # opt-in extras only, default empty
-env_passthrough: [TERM, LANG, TZ]
+# TERM*, COLORTERM are always passed through (built-in default).
+env_passthrough: [LANG, TZ]
 
 resources:
   memory: 4g
@@ -70,7 +71,7 @@ rtk:
 | `allowlist` | []string | yes | — | FQDNs (or `*.fqdn` wildcards) the in-container DNS resolver will answer. Anything not listed gets NXDOMAIN. Validated against an RFC-ish FQDN regex; IPs are rejected. |
 | `upstream_dns` | []string | yes | — | Upstream resolver IPs (v4) for safe-dns. Only reachable by uid 200 (firewall) per the nftables ruleset. |
 | `mounts` | []string | no | `[]` | Reserved for future opt-in extra mounts. |
-| `env_passthrough` | []string | no | `[TERM, LANG, TZ]` | Host env vars allowed into the container. Everything else (`HOME`, `PATH`, …) is blocked. |
+| `env_passthrough` | []string | no | `[LANG, TZ]` | Host env vars allowed into the container. Everything else (`HOME`, `PATH`, …) is blocked. Always-on defaults `TERM`, `TERM_PROGRAM`, `TERM_PROGRAM_VERSION`, `COLORTERM` are appended automatically. |
 | `resources.memory` | string | no | `4g` | Docker `--memory` value. |
 | `resources.pids` | int | no | `256` | Docker `--pids-limit`. |
 | `audit.enabled` | bool | no | `true` | Whether safe-dns writes the JSONL audit log. |

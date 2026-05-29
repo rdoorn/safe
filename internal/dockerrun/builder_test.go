@@ -323,3 +323,45 @@ func TestBuildArgvTmpfsForAuditLog(t *testing.T) {
 	require.Contains(t, joined, "--tmpfs /var/log/safe:rw,nosuid,nodev,uid=200,gid=200,size=64m",
 		"safe-dns audit log needs a writable tmpfs since rootfs is read-only")
 }
+
+func TestBuildArgvIncludesTerminalEnvDefaultsEvenWhenConfigOmitsThem(t *testing.T) {
+	cfg := minimalConfig()
+	cfg.EnvPassthrough = []string{"LANG"} // user did NOT list TERM_PROGRAM etc.
+	argv, err := dockerrun.BuildArgv(dockerrun.Inputs{
+		Config:    cfg,
+		AgentName: "claude",
+		CWD:       "/p",
+		RunID:     "x",
+		ConfigDir: "/tmp/safe-cfg-x",
+	})
+	require.NoError(t, err)
+	joined := strings.Join(argv, " ")
+	for _, k := range []string{"TERM", "TERM_PROGRAM", "TERM_PROGRAM_VERSION", "COLORTERM"} {
+		require.Contains(t, joined, "-e "+k, "%s must be auto-passthroughed so claude can enable kitty keyboard protocol (shift+enter)", k)
+	}
+	// User's explicit entry must still appear.
+	require.Contains(t, joined, "-e LANG")
+}
+
+// TestBuildArgvDoesNotDuplicateTerminalEnvDefaults verifies the merge is
+// idempotent: if the user's config already lists TERM, we don't emit -e TERM
+// twice.
+func TestBuildArgvDoesNotDuplicateTerminalEnvDefaults(t *testing.T) {
+	cfg := minimalConfig()
+	cfg.EnvPassthrough = []string{"TERM", "LANG"}
+	argv, err := dockerrun.BuildArgv(dockerrun.Inputs{
+		Config:    cfg,
+		AgentName: "claude",
+		CWD:       "/p",
+		RunID:     "x",
+		ConfigDir: "/tmp/safe-cfg-x",
+	})
+	require.NoError(t, err)
+	count := 0
+	for i := range argv {
+		if argv[i] == "TERM" && i > 0 && argv[i-1] == "-e" {
+			count++
+		}
+	}
+	require.Equal(t, 1, count, "TERM should be emitted once, not duplicated")
+}

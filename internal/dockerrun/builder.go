@@ -178,7 +178,7 @@ func BuildArgv(in Inputs) ([]string, error) { //nolint:gocyclo // unavoidable br
 	)
 	argv = append(argv, in.MountFlags...)
 
-	for _, k := range in.Config.EnvPassthrough {
+	for _, k := range mergeEnvPassthrough(in.Config.EnvPassthrough) {
 		argv = append(argv, "-e", k)
 	}
 

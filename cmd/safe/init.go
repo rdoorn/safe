@@ -133,8 +133,10 @@ upstream_dns:
   - 1.0.0.1
 
 # Host env vars to pass through into the container. Everything else is
-# stripped. Default below is the conservative minimum.
-env_passthrough: [TERM, LANG, TZ]
+# stripped. TERM, TERM_PROGRAM, TERM_PROGRAM_VERSION, COLORTERM are
+# ALWAYS passed through (required for shift+enter and color detection
+# in TUI agents); the list below is appended to those defaults.
+env_passthrough: [LANG, TZ]
 
 # Opt-in extra Linux capabilities granted to the container. Allowed:
 #   SYS_ADMIN        — enables /proc hidepid=2 (hides other uids' PIDs
