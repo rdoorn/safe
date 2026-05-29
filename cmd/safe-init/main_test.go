@@ -1,7 +1,11 @@
 package main
 
 import (
+	"net"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/rdoorn/safe/internal/config"
 	"github.com/stretchr/testify/require"
@@ -45,4 +49,44 @@ func TestAgentEnvRTKTelemetryAbsentWhenDisabled(t *testing.T) {
 	for _, e := range env {
 		require.NotEqual(t, "RTK_TELEMETRY_DISABLED=1", e)
 	}
+}
+
+// TestReadSecretFromTCPWritesReadyBeforeRead verifies that readSecretFromTCP
+// writes safeInitReadyLine to the accepted connection BEFORE it reads the
+// secret. This is the host's signal that the in-container listener really
+// accepted the connection (rather than vpnkit accepting on the host side and
+// dropping bytes).
+func TestReadSecretFromTCPWritesReadyBeforeRead(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	port := strings.Split(ln.Addr().String(), ":")[1]
+	require.NoError(t, ln.Close())
+
+	var got []byte
+	var readyLine string
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		// Give the listener a moment to come up.
+		time.Sleep(50 * time.Millisecond)
+		conn, derr := net.Dial("tcp", "127.0.0.1:"+port)
+		require.NoError(t, derr)
+		defer func() { _ = conn.Close() }()
+		_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		buf := make([]byte, len(safeInitReadyLine))
+		_, rerr := conn.Read(buf)
+		require.NoError(t, rerr)
+		readyLine = string(buf)
+		_, werr := conn.Write([]byte("my-secret\n"))
+		require.NoError(t, werr)
+	}()
+
+	data, err := readSecretFromTCP(port, 2*time.Second)
+	require.NoError(t, err)
+	got = data
+	wg.Wait()
+
+	require.Equal(t, safeInitReadyLine, readyLine, "READY line must be sent before secret read")
+	require.Equal(t, "my-secret\n", string(got))
 }

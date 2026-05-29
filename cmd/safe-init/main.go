@@ -418,6 +418,13 @@ func resolveAuthMode(cfg *config.Config, agentName string) (string, error) {
 	}
 }
 
+// safeInitReadyLine is the one-way handshake byte the in-container
+// listener writes immediately after accept, before reading the secret.
+// The host's PipeKey reads this to confirm the connection really
+// reached safe-init (vs being held open by docker-proxy / vpnkit while
+// the listener didn't exist yet). The content is not sensitive.
+const safeInitReadyLine = "SAFE-INIT-READY\n"
+
 // readSecretFromTCP waits up to timeout for the host to connect on the
 // in-container TCP port and write the auth secret (API key line or
 // credentials JSON blob). Reads until EOF so multi-line OAuth payloads
@@ -438,6 +445,17 @@ func readSecretFromTCP(port string, timeout time.Duration) ([]byte, error) {
 		return nil, fmt.Errorf("accept on :%s: %w", port, err)
 	}
 	defer func() { _ = conn.Close() }()
+
+	// Write the READY line BEFORE reading the secret. The host's
+	// PipeKey reads this round-trip byte and only proceeds to write
+	// the secret if it succeeds. This kills the macOS Docker Desktop
+	// race where vpnkit accepts the host TCP connection before this
+	// listener exists, swallows the host's write(), and silently drops
+	// the bytes.
+	_ = conn.SetWriteDeadline(time.Now().Add(timeout))
+	if _, werr := conn.Write([]byte(safeInitReadyLine)); werr != nil {
+		return nil, fmt.Errorf("write ready: %w", werr)
+	}
 
 	_ = conn.SetReadDeadline(time.Now().Add(timeout))
 	const maxSecretBytes = 1 << 16 // 64 KiB — generous for OAuth JSON
