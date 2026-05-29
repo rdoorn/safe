@@ -76,7 +76,7 @@ rtk:
 | `resources.pids` | int | no | `256` | Docker `--pids-limit`. |
 | `audit.enabled` | bool | no | `true` | Whether safe-dns writes the JSONL audit log. |
 | `audit.host_path` | string | no | `~/.local/share/safe/audit.log` | Host path mounted as the audit destination (planned). |
-| `rtk.enabled` | bool | no | `true` | Run `rtk init -g` at startup and set `RTK_TELEMETRY_DISABLED=1` in the agent env. |
+| `rtk.enabled` | bool | no | `true` | Run `rtk init -g --auto-patch` at startup and set `RTK_TELEMETRY_DISABLED=1` in the agent env. |
 
 ### `rtk`
 
@@ -84,7 +84,7 @@ Controls the in-container [RTK](https://github.com/rtk-ai/rtk) token optimiser.
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `enabled` | bool | `true` | Run `rtk init -g` at startup and set `RTK_TELEMETRY_DISABLED=1` in the agent env. RTK intercepts Bash command output and compresses it 60–90% before it reaches the LLM. |
+| `enabled` | bool | `true` | Run `rtk init -g --auto-patch` at startup and set `RTK_TELEMETRY_DISABLED=1` in the agent env. RTK intercepts Bash command output and compresses it 60–90% before it reaches the LLM. |
 
 Telemetry is unconditionally disabled (the container is firewalled; outbound connections to RTK telemetry endpoints would be dropped by nftables regardless).
 

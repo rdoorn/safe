@@ -11,10 +11,14 @@ import (
 // so that RTK never attempts telemetry calls (the container is firewalled).
 const rtkTelemetryEnv = "RTK_TELEMETRY_DISABLED=1"
 
-// initRTK runs `rtk init -g` as the agent uid so RTK can write its
-// Claude Code PreToolUse hook into /home/agent/.claude/settings.json.
+// initRTK runs `rtk init -g --auto-patch` as the agent uid so RTK can write
+// its Claude Code PreToolUse hook into /home/agent/.claude/settings.json.
 // RTK manages its own merge logic; if settings.json already exists (from
 // a customization.settings mount) RTK merges into it.
+//
+// --auto-patch is mandatory: container startup is non-interactive, so the
+// default `rtk init -g` settings.json prompt ("[y/N]") reads no stdin and
+// defaults to N, silently leaving the hook uninstalled (no token savings).
 //
 // When running as root (the normal container case), the child is exec'd
 // as uid 1000/gid 1000. When not root (developer test runs), credentials
@@ -24,7 +28,7 @@ const rtkTelemetryEnv = "RTK_TELEMETRY_DISABLED=1"
 // the agent starts regardless, just without RTK's hook.
 func initRTK(binPath string) {
 	fmt.Fprintln(os.Stderr, "safe-init: rtk: enabled, telemetry disabled")
-	cmd := exec.Command(binPath, "init", "-g") //nolint:gosec // binPath is a constant at production call sites
+	cmd := exec.Command(binPath, "init", "-g", "--auto-patch") //nolint:gosec // binPath is a constant at production call sites
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Env = []string{

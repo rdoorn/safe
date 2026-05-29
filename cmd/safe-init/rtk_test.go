@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -10,17 +11,20 @@ import (
 
 func TestInitRTKCallsBinary(t *testing.T) {
 	dir := t.TempDir()
-	flagFile := filepath.Join(dir, "ran")
+	argsFile := filepath.Join(dir, "args")
 
-	// Fake rtk binary: writes a flag file then exits 0.
+	// Fake rtk binary: records its argv then exits 0.
 	fakeBin := filepath.Join(dir, "rtk")
-	script := "#!/bin/sh\ntouch " + flagFile + "\n"
+	script := "#!/bin/sh\necho \"$@\" > " + argsFile + "\n"
 	require.NoError(t, os.WriteFile(fakeBin, []byte(script), 0o755)) //nolint:gosec // test helper script must be executable
 
 	initRTK(fakeBin)
 
-	_, err := os.Stat(flagFile)
+	got, err := os.ReadFile(argsFile) //nolint:gosec // path is test-controlled
 	require.NoError(t, err, "fake rtk binary was not called")
+	// --auto-patch is required: startup is non-interactive, so without it the
+	// settings.json prompt defaults to N and the hook is never installed.
+	require.Equal(t, "init -g --auto-patch", strings.TrimSpace(string(got)))
 }
 
 func TestInitRTKNonZeroExitDoesNotPanic(t *testing.T) {
