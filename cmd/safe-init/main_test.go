@@ -90,3 +90,49 @@ func TestReadSecretFromTCPWritesReadyBeforeRead(t *testing.T) {
 	require.Equal(t, safeInitReadyLine, readyLine, "READY line must be sent before secret read")
 	require.Equal(t, "my-secret\n", string(got))
 }
+
+// TestOpenSecretListenerBindsSynchronously verifies openSecretListener binds
+// the port WITHOUT blocking on accept, so callers can listen-then-load-config
+// and only accept once they're ready.
+func TestOpenSecretListenerBindsSynchronously(t *testing.T) {
+	ln, err := openSecretListener("0")
+	require.NoError(t, err)
+	defer func() { _ = ln.Close() }()
+	addr := ln.Addr().String()
+	require.NotEmpty(t, addr)
+	require.Contains(t, addr, "[::]:")
+}
+
+// TestAcceptAndReadSecretPerformsHandshake verifies acceptAndReadSecret reads
+// a secret from an externally-opened listener, performing the SAFE-INIT-READY
+// handshake before the read.
+func TestAcceptAndReadSecretPerformsHandshake(t *testing.T) {
+	ln, err := openSecretListener("0")
+	require.NoError(t, err)
+	defer func() { _ = ln.Close() }()
+	parts := strings.Split(ln.Addr().String(), ":")
+	port := parts[len(parts)-1]
+
+	var readyLine string
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		time.Sleep(50 * time.Millisecond)
+		conn, derr := net.Dial("tcp", "127.0.0.1:"+port)
+		require.NoError(t, derr)
+		defer func() { _ = conn.Close() }()
+		_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		buf := make([]byte, len(safeInitReadyLine))
+		_, rerr := conn.Read(buf)
+		require.NoError(t, rerr)
+		readyLine = string(buf)
+		_, _ = conn.Write([]byte("secret-bytes\n"))
+	}()
+
+	data, err := acceptAndReadSecret(ln, 2*time.Second)
+	require.NoError(t, err)
+	wg.Wait()
+	require.Equal(t, safeInitReadyLine, readyLine)
+	require.Equal(t, "secret-bytes\n", string(data))
+}

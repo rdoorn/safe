@@ -83,34 +83,51 @@ func run(agentName string, agentArgs []string) error { //nolint:gocyclo // linea
 		fmt.Fprintf(os.Stderr, "safe-init: stage=%d %s\n", stage, msg)
 	}
 
+	// Bootstrap-secret listener MUST be opened before any other work.
+	// Docker exposes the host port mapping as soon as the container
+	// starts; if the host CLI's PipeKey connects and the in-container
+	// listener doesn't exist yet, docker-proxy / vpnkit accepts the
+	// host TCP and (on macOS) swallows the bytes. Bind first, then do
+	// everything else, then accept when we have the secret to feed.
+	// The READY handshake closes the remaining race; this early-bind
+	// narrows the window so the host's retry loop almost never needs
+	// to fire.
+	var secretLn net.Listener
+	if keyholderEnabled {
+		logStage(0, "open bootstrap listener (FIRST; before any other work)")
+		ln, lerr := openSecretListener(bootstrapPort)
+		if lerr != nil {
+			return fmt.Errorf("open bootstrap listener: %w", lerr)
+		}
+		secretLn = ln
+	}
+
 	cfg, err := config.LoadFile(configPath)
 	if err != nil {
+		if secretLn != nil {
+			_ = secretLn.Close()
+		}
 		return fmt.Errorf("load config: %w", err)
 	}
 
-	// Bootstrap secret MUST be received first — even before hidepid and
-	// the chown block. Docker exposes the host port mapping as soon as
-	// the container starts; if the host CLI's PipeKey connects and
-	// writes before our listener exists, docker-proxy accepts the bytes
-	// and drops them silently. That race was visible as a ~1-in-10
-	// "accept on :9099: i/o timeout" failure when we did chowns first.
 	var secret []byte
 	authMode := ""
 	if keyholderEnabled {
-		logStage(0, "read bootstrap secret (FIRST; before any other work)")
+		logStage(1, "accept + read bootstrap secret")
 		var ferr error
 		authMode, ferr = resolveAuthMode(cfg, agentName)
 		if ferr != nil {
+			_ = secretLn.Close()
 			return fmt.Errorf("determine auth mode: %w", ferr)
 		}
-		s, rerr := readSecretFromTCP(bootstrapPort, keyPipeTimeout)
+		s, rerr := acceptAndReadSecret(secretLn, keyPipeTimeout)
 		if rerr != nil {
 			return fmt.Errorf("read auth secret: %w", rerr)
 		}
 		secret = s
 	}
 
-	logStage(1, "remount /proc hidepid=2 (best-effort)")
+	logStage(2, "remount /proc hidepid=2 (best-effort)")
 	if err := initd.RemountProcHidepid(defaultFirewallGID); err != nil {
 		fmt.Fprintln(os.Stderr, "safe-init: hidepid remount skipped:", err)
 		fmt.Fprintln(os.Stderr, "safe-init: add --cap-add SYS_ADMIN to docker run to enable PID hiding")
@@ -170,12 +187,12 @@ func run(agentName string, agentArgs []string) error { //nolint:gocyclo // linea
 		fmt.Fprintln(os.Stderr, "safe-init: tool provisioning skipped:", err)
 	}
 
-	logStage(3, "run safe-fw to seed nftables")
+	logStage(4, "run safe-fw to seed nftables")
 	if err := runSafeFW(); err != nil {
 		return fmt.Errorf("safe-fw seed: %w", err)
 	}
 
-	logStage(4, "spawn safe-dns as uid 200")
+	logStage(5, "spawn safe-dns as uid 200")
 	dnsCmd, err := startUserProcess(safeDNS, []string{"--config", configPath},
 		defaultFirewallUID, defaultFirewallGID, nil)
 	if err != nil {
@@ -184,7 +201,7 @@ func run(agentName string, agentArgs []string) error { //nolint:gocyclo // linea
 
 	var keyholderCmd *exec.Cmd
 	if keyholderEnabled {
-		logStage(5, "spawn safe-keyholder as uid 201")
+		logStage(6, "spawn safe-keyholder as uid 201")
 		keyholderCmd, err = startUserProcess(safeKeyholder,
 			[]string{"--config", configPath, "--agent", agentName, "--mode", authMode},
 			defaultKeyholderUID, defaultKeyholderUID, secret)
@@ -192,7 +209,7 @@ func run(agentName string, agentArgs []string) error { //nolint:gocyclo // linea
 			return fmt.Errorf("start safe-keyholder: %w", err)
 		}
 	} else {
-		logStage(5, fmt.Sprintf("SKIPPED safe-keyholder (mode=%s)", authMode))
+		logStage(6, fmt.Sprintf("SKIPPED safe-keyholder (mode=%s)", authMode))
 	}
 
 	// RTK token optimiser: run `rtk init -g` as agent uid so it can write
@@ -217,13 +234,13 @@ func run(agentName string, agentArgs []string) error { //nolint:gocyclo // linea
 	// ourselves because we still need root to reap zombies; instead the
 	// agent runs in its own credential via SysProcAttr.
 	agentBin := resolveAgentPath(agentName)
-	logStage(6, fmt.Sprintf("spawn agent: bin=%s args=%v uid=%d", agentBin, agentArgs, defaultAgentUID))
+	logStage(7, fmt.Sprintf("spawn agent: bin=%s args=%v uid=%d", agentBin, agentArgs, defaultAgentUID))
 	agentCmd, err := startAgent(agentBin, agentArgs, defaultAgentUID, defaultAgentGID, rtkEnabled)
 	if err != nil {
 		return fmt.Errorf("start agent: %w", err)
 	}
 
-	logStage(7, fmt.Sprintf("supervise (agent pid=%d, waiting for exit)", agentCmd.Process.Pid))
+	logStage(8, fmt.Sprintf("supervise (agent pid=%d, waiting for exit)", agentCmd.Process.Pid))
 	return supervise(agentCmd, dnsCmd, keyholderCmd)
 }
 
@@ -425,16 +442,29 @@ func resolveAuthMode(cfg *config.Config, agentName string) (string, error) {
 // the listener didn't exist yet). The content is not sensitive.
 const safeInitReadyLine = "SAFE-INIT-READY\n"
 
-// readSecretFromTCP waits up to timeout for the host to connect on the
-// in-container TCP port and write the auth secret (API key line or
-// credentials JSON blob). Reads until EOF so multi-line OAuth payloads
-// work too. The listener binds 0.0.0.0 because the docker-proxy reaches
-// us via the bridge interface, not loopback.
-func readSecretFromTCP(port string, timeout time.Duration) ([]byte, error) {
+// openSecretListener binds the bootstrap port without accepting.
+// Callers do this as the FIRST thing in safe-init.run() so the
+// listener exists before docker exposes the port mapping; otherwise
+// macOS Docker Desktop's vpnkit can accept on the host side, fail to
+// forward, and silently drop the host's write. After binding, the
+// caller is free to do other work (config load, auth-mode resolution,
+// etc.) and call acceptAndReadSecret when ready. The listener binds
+// 0.0.0.0 because the docker-proxy reaches us via the bridge
+// interface, not loopback.
+func openSecretListener(port string) (net.Listener, error) {
 	ln, err := net.Listen("tcp", "0.0.0.0:"+port)
 	if err != nil {
 		return nil, fmt.Errorf("listen tcp 0.0.0.0:%s: %w", port, err)
 	}
+	return ln, nil
+}
+
+// acceptAndReadSecret accepts ONE connection on ln, writes the
+// SAFE-INIT-READY handshake byte, then reads the secret until EOF
+// (up to 64 KiB) so multi-line OAuth payloads work too. Closes the
+// listener and connection before returning. See safeInitReadyLine
+// doc for the handshake's purpose.
+func acceptAndReadSecret(ln net.Listener, timeout time.Duration) ([]byte, error) {
 	defer func() { _ = ln.Close() }()
 
 	if t, ok := ln.(*net.TCPListener); ok {
@@ -442,7 +472,7 @@ func readSecretFromTCP(port string, timeout time.Duration) ([]byte, error) {
 	}
 	conn, err := ln.Accept()
 	if err != nil {
-		return nil, fmt.Errorf("accept on :%s: %w", port, err)
+		return nil, fmt.Errorf("accept on %s: %w", ln.Addr(), err)
 	}
 	defer func() { _ = conn.Close() }()
 
@@ -464,6 +494,17 @@ func readSecretFromTCP(port string, timeout time.Duration) ([]byte, error) {
 		return nil, fmt.Errorf("read secret: %w", err)
 	}
 	return data, nil
+}
+
+// readSecretFromTCP is a thin shim that opens the listener and
+// immediately accepts. New code should call openSecretListener +
+// acceptAndReadSecret directly so it can listen-then-do-other-work.
+func readSecretFromTCP(port string, timeout time.Duration) ([]byte, error) {
+	ln, err := openSecretListener(port)
+	if err != nil {
+		return nil, err
+	}
+	return acceptAndReadSecret(ln, timeout)
 }
 
 // supervise waits for the agent to exit, forwards SIGINT/SIGTERM from
