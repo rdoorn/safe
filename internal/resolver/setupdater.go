@@ -93,12 +93,6 @@ func roundUpToSeconds(d time.Duration) time.Duration {
 	return (d/time.Second + 1) * time.Second
 }
 
-// errUnsupportedPlatform is returned by applyToKernel on non-Linux hosts
-// where netlink/nftables is not available. SetUpdater is only meant to
-// run inside the SAFE container (Linux); non-Linux compilation exists
-// only so the package builds on macOS for development.
-var errUnsupportedPlatform = errors.New("nftables set updates require Linux")
-
 // Compile-time guard that ipBatch is used; silences unused-warnings on
 // non-Linux builds where applyToKernel ignores it.
 var _ = ipBatch{}
