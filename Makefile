@@ -1,9 +1,15 @@
-.PHONY: build test lint vet fmt clean image install uninstall
+.PHONY: build test lint vet fmt clean image install uninstall tools
 
 BINARIES := safe safe-init safe-fw safe-dns safe-keyholder
 BIN_DIR  := bin
 PREFIX   ?= /usr/local
 INSTALL_DIR := $(PREFIX)/bin
+
+# Pinned to the version CI runs (see .gitlab-ci.yml golangci/golangci-lint image).
+GOLANGCI_VERSION := v2.7.2
+# Resolve golangci-lint from PATH (CI image) or the persistent GOPATH/bin
+# (populated by `make tools`; GOPATH/bin is not on PATH in the sandbox).
+GOLANGCI := $(shell command -v golangci-lint 2>/dev/null || echo $(shell go env GOPATH)/bin/golangci-lint)
 
 build:
 	@mkdir -p $(BIN_DIR)
@@ -27,10 +33,17 @@ uninstall:
 	$$SUDO rm -f $(INSTALL_DIR)/safe
 
 test:
-	go test ./...
+	TMPDIR="$${GOTMPDIR:-$$TMPDIR}" go test ./...
+
+# Install dev tooling into GOPATH/bin (persistent across sandbox runs).
+# CGO_ENABLED=0 avoids the C link step (the sandbox has no usable C linker)
+# and golangci-lint is pure Go, so a static build is correct anyway.
+tools:
+	CGO_ENABLED=0 go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_VERSION)
 
 lint:
-	golangci-lint run ./...
+	@command -v "$(GOLANGCI)" >/dev/null 2>&1 || { echo "golangci-lint not found — run 'make tools'"; exit 1; }
+	$(GOLANGCI) run ./...
 
 vet:
 	go vet ./...
