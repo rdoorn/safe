@@ -26,10 +26,27 @@ func NewProxy(cfg ProxyConfig) *httputil.ReverseProxy {
 		AuthScheme: cfg.AuthScheme,
 		Target:     cfg.Target,
 	}
+	// When the token source can force-refresh (oauth mode), wrap the base
+	// transport so a mid-session 401 triggers a refresh + single retry
+	// instead of bubbling up to the agent as a forced re-login. apikey mode
+	// has no refresh path and is left untouched.
+	transport := cfg.Transport
+	if _, ok := cfg.Token.(ForceRefresher); ok {
+		base := cfg.Transport
+		if base == nil {
+			base = http.DefaultTransport
+		}
+		transport = &refreshingTransport{
+			base:       base,
+			token:      cfg.Token,
+			authHeader: cfg.AuthHeader,
+			authScheme: cfg.AuthScheme,
+		}
+	}
 	return &httputil.ReverseProxy{
 		Director: func(r *http.Request) {
 			rw.Apply(r)
 		},
-		Transport: cfg.Transport,
+		Transport: transport,
 	}
 }
